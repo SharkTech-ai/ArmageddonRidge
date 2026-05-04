@@ -8,6 +8,14 @@ let frameMs = 16.7;
 let renderMs = 0;
 let lastScene;
 let rafId = 0;
+let shotInProgress = false;
+const cloudBands = [
+    { x: 90, y: 64, scale: 1.08, speed: 7 },
+    { x: 360, y: 104, scale: 0.84, speed: 11 },
+    { x: 690, y: 72, scale: 1.18, speed: 8 },
+    { x: 1010, y: 118, scale: 0.72, speed: 13 },
+    { x: 1260, y: 48, scale: 0.96, speed: 9 }
+];
 
 export async function initialize(element) {
     canvas = element;
@@ -37,11 +45,28 @@ export async function playShot(scene, trail, explosions, screenShake) {
         return;
     }
 
+    shotInProgress = true;
     const points = Array.from(trail);
     const duration = Math.min(1200, Math.max(260, points.length * 4));
     const started = performance.now();
 
     return new Promise(resolve => {
+        const finish = () => {
+            if (!explosions?.length) {
+                setTimeout(() => {
+                    render(scene);
+                    shotInProgress = false;
+                    resolve();
+                }, 120);
+                return;
+            }
+
+            animateExplosions(scene, explosions ?? [], screenShake).then(() => {
+                shotInProgress = false;
+                resolve();
+            });
+        };
+
         const tick = now => {
             const t = Math.min(1, (now - started) / duration);
             const count = Math.max(1, Math.floor(points.length * t));
@@ -53,11 +78,11 @@ export async function playShot(scene, trail, explosions, screenShake) {
                 return;
             }
 
-            drawExplosions(explosions ?? []);
-            setTimeout(() => {
-                render(scene);
-                resolve();
-            }, 120);
+            requestAnimationFrame(() => {
+                drawScene(scene, 0, 0);
+                drawTrail(points);
+                finish();
+            });
         };
 
         requestAnimationFrame(tick);
@@ -75,7 +100,7 @@ function drawScene(scene, offsetX, offsetY) {
     ctx.setTransform(scaleX, 0, 0, scaleY, offsetX, offsetY);
     drawSky(scene);
     drawRadiation(scene.radiation ?? []);
-    drawTerrain(scene.terrain ?? []);
+    drawTerrain(scene.terrain ?? [], scene.world);
     drawTank(scene.player, "playerTank");
     drawTank(scene.cpu, "cpuTank");
     drawWind(scene.wind);
@@ -89,37 +114,125 @@ function drawSky(scene) {
     gradient.addColorStop(1, "#5b4a3d");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, scene.world.width, scene.world.height);
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    for (let i = 0; i < 5; i++) {
-        const x = 120 + i * 230 + (scene.wind ?? 0);
-        const y = 60 + (i % 2) * 34;
-        ctx.fillRect(x, y, 70, 10);
-        ctx.fillRect(x + 18, y - 10, 82, 10);
+    drawClouds(scene);
+}
+
+function drawClouds(scene) {
+    const worldWidth = scene.world.width;
+    const windDrift = (scene.wind ?? 0) * 0.2;
+    const nowSeconds = performance.now() / 1000;
+
+    for (const cloud of cloudBands) {
+        const travel = worldWidth + 260;
+        const x = ((cloud.x + (cloud.speed + windDrift) * nowSeconds) % travel) - 150;
+        drawCloud(x, cloud.y, cloud.scale);
     }
 }
 
-function drawTerrain(terrain) {
+function drawCloud(x, y, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "rgba(255,255,255,0.46)";
+    ctx.beginPath();
+    ctx.ellipse(26, 10, 32, 13, 0, 0, Math.PI * 2);
+    ctx.ellipse(62, 5, 44, 18, 0, 0, Math.PI * 2);
+    ctx.ellipse(104, 12, 38, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(225,239,245,0.32)";
+    ctx.fillRect(18, 16, 108, 8);
+    ctx.restore();
+}
+
+function drawTerrain(terrain, world) {
     if (!terrain.length) {
         return;
     }
 
+    const worldHeight = world?.height ?? 700;
+    const surfaceTop = terrain.reduce((lowest, y) => Math.min(lowest, y), worldHeight);
     ctx.beginPath();
-    ctx.moveTo(0, 700);
+    ctx.moveTo(0, worldHeight);
     for (let x = 0; x < terrain.length; x++) {
         ctx.lineTo(x, terrain[x]);
     }
-    ctx.lineTo(terrain.length - 1, 700);
+    ctx.lineTo(terrain.length - 1, worldHeight);
     ctx.closePath();
-    ctx.fillStyle = "#222018";
+    const dirtGradient = ctx.createLinearGradient(0, surfaceTop, 0, worldHeight);
+    dirtGradient.addColorStop(0, "#4f6d38");
+    dirtGradient.addColorStop(0.08, "#2f4324");
+    dirtGradient.addColorStop(0.34, "#3d3327");
+    dirtGradient.addColorStop(1, "#171511");
+    ctx.fillStyle = dirtGradient;
     ctx.fill();
-    ctx.strokeStyle = "#7aa35b";
-    ctx.lineWidth = 3;
+
+    ctx.save();
     ctx.beginPath();
-    for (let x = 0; x < terrain.length; x += 4) {
+    ctx.moveTo(0, worldHeight);
+    for (let x = 0; x < terrain.length; x++) {
+        ctx.lineTo(x, terrain[x]);
+    }
+    ctx.lineTo(terrain.length - 1, worldHeight);
+    ctx.closePath();
+    ctx.clip();
+    drawTerrainStrata(terrain, worldHeight);
+    drawTerrainGrain(terrain, worldHeight);
+    ctx.restore();
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#8fbf64";
+    ctx.lineWidth = 4;
+    strokeTerrainTop(terrain, 4);
+    ctx.strokeStyle = "rgba(232, 211, 143, 0.55)";
+    ctx.lineWidth = 1.5;
+    strokeTerrainTop(terrain, 6, 5);
+}
+
+function drawTerrainStrata(terrain, worldHeight) {
+    for (let y = 370; y < worldHeight; y += 34) {
+        ctx.beginPath();
+        let started = false;
+        for (let x = 0; x < terrain.length; x += 8) {
+            const surface = terrain[x] ?? worldHeight;
+            const lineY = y + Math.sin((x + y) * 0.018) * 5;
+            if (lineY <= surface + 12) {
+                started = false;
+                continue;
+            }
+
+            if (!started) {
+                ctx.moveTo(x, lineY);
+                started = true;
+            } else {
+                ctx.lineTo(x, lineY);
+            }
+        }
+
+        ctx.strokeStyle = y % 68 === 0 ? "rgba(116, 93, 65, 0.42)" : "rgba(232, 211, 143, 0.18)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
+
+function drawTerrainGrain(terrain, worldHeight) {
+    ctx.fillStyle = "rgba(255, 235, 178, 0.11)";
+    for (let x = 3; x < terrain.length; x += 17) {
+        const top = terrain[x] ?? worldHeight;
+        const depth = Math.max(18, worldHeight - top);
+        const y = top + 12 + (hash2d(x, top) % Math.floor(depth));
+        ctx.fillRect(x, y, 2, 1);
+    }
+}
+
+function strokeTerrainTop(terrain, step, yOffset = 0) {
+    ctx.beginPath();
+    for (let x = 0; x < terrain.length; x += step) {
+        const y = terrain[x] + yOffset;
         if (x === 0) {
-            ctx.moveTo(x, terrain[x]);
+            ctx.moveTo(x, y);
         } else {
-            ctx.lineTo(x, terrain[x]);
+            ctx.lineTo(x, y);
         }
     }
     ctx.stroke();
@@ -142,24 +255,83 @@ function drawTank(tank, frameName) {
         return;
     }
 
-    drawSprite(frameName, tank.x - 24, tank.y - 28, 48, 32);
     ctx.save();
-    ctx.translate(tank.x, tank.y - 22);
-    ctx.rotate(-(tank.angle ?? 45) * Math.PI / 180);
-    drawSprite(tank.isCpu ? "cpuTurret" : "playerTurret", -4, -5, 36, 10);
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "#05070a";
+    ctx.beginPath();
+    ctx.ellipse(tank.x, tank.y - 4, 40, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 
+    drawSprite(frameName, tank.x - 40, tank.y - 42, 80, 40);
+    drawTankBarrel(tank);
+
     if (tank.shield > 0) {
-        ctx.beginPath();
-        ctx.arc(tank.x, tank.y - 15, 28 + Math.sin(performance.now() * 0.008) * 2, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(101, 167, 242, 0.75)";
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        ctx.save();
+        ctx.globalAlpha = 0.5 + Math.sin(performance.now() * 0.008) * 0.16;
+        drawSprite("shield", tank.x - 34, tank.y - 50, 68, 58);
+        ctx.restore();
     }
 
     if (tank.health <= 35) {
-        ctx.fillStyle = "rgba(40,40,40,0.55)";
-        ctx.fillRect(tank.x - 6, tank.y - 48, 12, 20);
+        drawSmokeStack(tank.x, tank.y - 54);
+    }
+}
+
+function drawTankBarrel(tank) {
+    ctx.save();
+    ctx.translate(tank.x, tank.y - 32);
+    ctx.rotate(-(tank.angle ?? 45) * Math.PI / 180);
+
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#080b0d";
+    ctx.lineWidth = 11;
+    ctx.beginPath();
+    ctx.moveTo(3, 0);
+    ctx.lineTo(40, 0);
+    ctx.stroke();
+
+    const barrelGradient = ctx.createLinearGradient(4, -5, 40, 5);
+    barrelGradient.addColorStop(0, "#c8d0d8");
+    barrelGradient.addColorStop(0.38, "#4c5965");
+    barrelGradient.addColorStop(0.72, "#f2f5f5");
+    barrelGradient.addColorStop(1, "#2b333b");
+    ctx.strokeStyle = barrelGradient;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(3, 0);
+    ctx.lineTo(41, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(8, -2.5);
+    ctx.lineTo(31, -2.5);
+    ctx.stroke();
+
+    ctx.fillStyle = tank.isCpu ? "#ff6d32" : "#23d3c7";
+    ctx.strokeStyle = "#090b0d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 13, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#080b0d";
+    ctx.fillRect(38, -5, 7, 10);
+    ctx.fillStyle = "#cfd8df";
+    ctx.fillRect(40, -3, 4, 6);
+    ctx.restore();
+}
+
+function drawSmokeStack(x, y) {
+    for (let i = 0; i < 3; i++) {
+        const drift = Math.sin(performance.now() * 0.002 + i) * 5;
+        ctx.fillStyle = `rgba(28, 28, 28, ${0.38 - i * 0.08})`;
+        ctx.beginPath();
+        ctx.arc(x + drift, y - i * 11, 6 + i * 2, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
@@ -187,32 +359,114 @@ function drawTrail(points) {
     });
     ctx.stroke();
     const last = points[points.length - 1];
-    drawSprite("shell", last.x - 5, last.y - 5, 10, 10);
+    drawSprite("shell", last.x - 9, last.y - 5, 18, 9);
     ctx.restore();
 }
 
-function drawExplosions(explosions) {
+function animateExplosions(scene, explosions, screenShake) {
+    const started = performance.now();
+    const duration = explosions.some(explosion => explosion.nuclear) ? 560 : 420;
+
+    return new Promise(resolve => {
+        const tick = now => {
+            const t = Math.min(1, (now - started) / duration);
+            const strength = Math.sin(t * Math.PI);
+            const shake = screenShake ? strength * (explosions.some(e => e.nuclear || e.radius > 80) ? 7 : 3) : 0;
+            drawScene(scene, Math.sin(now * 0.09) * shake, Math.cos(now * 0.07) * shake * 0.45);
+            drawExplosions(explosions, t);
+            if (t < 1) {
+                requestAnimationFrame(tick);
+                return;
+            }
+
+            render(scene);
+            resolve();
+        };
+
+        requestAnimationFrame(tick);
+    });
+}
+
+function drawExplosions(explosions, progress = 1) {
     ctx.save();
     ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
     for (const explosion of explosions) {
         const radius = explosion.radius ?? 32;
-        const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, radius);
+        const bloom = radius * (0.45 + progress * 0.9);
+        const fade = Math.max(0, 1 - progress);
+        const flash = Math.max(0, 1 - progress * 2.2);
+        const spriteName = explosion.nuclear ? "nuclear" : radius > 58 ? "explosionLarge" : "explosionSmall";
+        const spriteSize = radius * (1.4 + progress * 0.95);
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, 0.25 + progress * 1.2) * Math.max(0.18, 1 - progress * 0.16);
+        drawSprite(spriteName, explosion.x - spriteSize / 2, explosion.y - spriteSize / 2, spriteSize, spriteSize);
+        ctx.restore();
+
+        const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, bloom);
         gradient.addColorStop(0, "#fffdf0");
-        gradient.addColorStop(0.32, explosion.nuclear ? "#c8ff5b" : "#ffdc68");
-        gradient.addColorStop(1, "rgba(236,106,92,0)");
+        gradient.addColorStop(0.22, explosion.nuclear ? "#d7ff6a" : "#ffdc68");
+        gradient.addColorStop(0.58, explosion.nuclear ? "rgba(101, 197, 78, 0.58)" : "rgba(236, 106, 92, 0.72)");
+        gradient.addColorStop(1, "rgba(28, 22, 18, 0)");
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(explosion.x, explosion.y, radius, 0, Math.PI * 2);
+        ctx.arc(explosion.x, explosion.y, bloom, 0, Math.PI * 2);
         ctx.fill();
-        if (explosion.nuclear) {
-            ctx.strokeStyle = "rgba(255,255,255,0.75)";
-            ctx.lineWidth = 5;
+
+        ctx.strokeStyle = `rgba(255, 246, 191, ${0.78 * fade})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius * (0.65 + progress * 1.1), 0, Math.PI * 2);
+        ctx.stroke();
+
+        drawBlastSparks(explosion, radius, progress);
+        drawSmokePuffs(explosion, radius, progress);
+
+        if (flash > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.72})`;
             ctx.beginPath();
-            ctx.arc(explosion.x, explosion.y, radius * 1.45, 0, Math.PI * 2);
+            ctx.arc(explosion.x, explosion.y, radius * (0.18 + progress * 0.35), 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        if (explosion.nuclear) {
+            ctx.strokeStyle = `rgba(213, 255, 106, ${0.75 * fade})`;
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.arc(explosion.x, explosion.y, radius * (1.1 + progress * 1.15), 0, Math.PI * 2);
             ctx.stroke();
         }
     }
     ctx.restore();
+}
+
+function drawBlastSparks(explosion, radius, progress) {
+    const count = explosion.nuclear ? 22 : 14;
+    ctx.strokeStyle = `rgba(255, 218, 104, ${Math.max(0, 1 - progress)})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i / count) + hash2d(i, radius) * 0.0009;
+        const inner = radius * (0.24 + progress * 0.38);
+        const outer = radius * (0.42 + progress * (0.78 + (i % 3) * 0.12));
+        ctx.beginPath();
+        ctx.moveTo(explosion.x + Math.cos(angle) * inner, explosion.y + Math.sin(angle) * inner);
+        ctx.lineTo(explosion.x + Math.cos(angle) * outer, explosion.y + Math.sin(angle) * outer);
+        ctx.stroke();
+    }
+}
+
+function drawSmokePuffs(explosion, radius, progress) {
+    const count = explosion.nuclear ? 11 : 7;
+    for (let i = 0; i < count; i++) {
+        const angle = Math.PI * 2 * i / count;
+        const drift = radius * (0.28 + progress * 0.55);
+        const puffRadius = radius * (0.12 + progress * 0.18) * (1 + (i % 3) * 0.16);
+        const x = explosion.x + Math.cos(angle) * drift;
+        const y = explosion.y + Math.sin(angle) * drift - progress * radius * 0.16;
+        ctx.fillStyle = `rgba(42, 37, 31, ${0.34 * progress * (1 - progress * 0.35)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, puffRadius, 0, Math.PI * 2);
+        ctx.fill();
+    }
 }
 
 function drawSprite(name, x, y, width, height) {
@@ -270,7 +524,7 @@ function startStatsLoop() {
 
     const tick = () => {
         const started = performance.now();
-        if (lastScene) {
+        if (lastScene && !shotInProgress) {
             sizeCanvas();
             drawScene(lastScene, 0, 0);
             renderMs = performance.now() - started;
@@ -281,4 +535,9 @@ function startStatsLoop() {
     };
 
     rafId = requestAnimationFrame(tick);
+}
+
+function hash2d(x, y) {
+    const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+    return Math.abs(Math.floor(value));
 }

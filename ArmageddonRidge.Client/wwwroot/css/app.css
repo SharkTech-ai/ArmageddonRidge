@@ -37,6 +37,14 @@ button, .ghost-link {
     cursor: pointer;
 }
 
+.icon-button {
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
 button:disabled {
     cursor: not-allowed;
     opacity: 0.45;
@@ -268,7 +276,50 @@ select {
     top: 16px;
     right: 16px;
     z-index: 5;
-    width: min(340px, calc(100vw - 32px));
+    width: min(360px, calc(100vw - 32px));
+    gap: 10px;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
+}
+
+.settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 2px;
+}
+
+.settings-head h2 {
+    margin: 2px 0 0;
+    font-size: 1.05rem;
+    line-height: 1.1;
+}
+
+.settings-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    min-height: 34px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    padding-top: 10px;
+    color: var(--text);
+    font-size: 0.92rem;
+}
+
+.settings-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.settings-row input[type="range"] {
+    min-width: 150px;
+}
+
+.range-row {
+    grid-template-columns: 112px minmax(150px, 1fr);
 }
 
 .benchmark-page {

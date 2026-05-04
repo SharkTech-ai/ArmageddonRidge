@@ -49,6 +49,29 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void TeleportShotIsConsumedAndCannotBeReusedFromOneInventoryCount()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.TeleportShot, 1);
+        state.SelectedWeaponId = WeaponIds.TeleportShot;
+        engine.StartBattle(state);
+
+        var teleport = engine.FireCurrentTurn(state, settings);
+
+        Assert.Equal(WeaponIds.TeleportShot, teleport.WeaponId);
+        Assert.Equal(0, state.PlayerTank.GetInventoryCount(WeaponIds.TeleportShot));
+        Assert.False(state.PlayerTank.HasWeapon(WeaponIds.TeleportShot));
+
+        state.CurrentTurn = TurnOwner.Player;
+        var fallback = engine.FireCurrentTurn(state, settings);
+
+        Assert.Equal(WeaponIds.PeaShell, fallback.WeaponId);
+        Assert.Equal(0, state.PlayerTank.GetInventoryCount(WeaponIds.TeleportShot));
+    }
+
+    [Fact]
     public void FiringSettlesTanksToNearestVisibleTerrainWhenTheirColumnIsGone()
     {
         var engine = CreateEngine();

@@ -5,26 +5,33 @@ using System.Text.Json;
 var repoRoot = FindRepoRoot();
 var spriteRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites");
 var iconRoot = Path.Combine(spriteRoot, "icons");
+var sourceSheet = Path.Combine(repoRoot, "tools", "ArmageddonRidge.AssetPipeline", "assets", "generated-tank-sheet.png");
 Directory.CreateDirectory(spriteRoot);
 Directory.CreateDirectory(iconRoot);
 
-var atlas = new Bitmap32(256, 128, Color32.Transparent);
-var frames = new Dictionary<string, Frame>();
+if (!File.Exists(sourceSheet))
+{
+    throw new FileNotFoundException("The generated tank sprite sheet is missing.", sourceSheet);
+}
 
-AddFrame("playerTank", 0, 0, 48, 32, bmp => DrawTank(bmp, new Color32(51, 203, 185), new Color32(20, 28, 35)));
-AddFrame("cpuTank", 48, 0, 48, 32, bmp => DrawTank(bmp, new Color32(232, 84, 78), new Color32(20, 28, 35)));
-AddFrame("playerTurret", 96, 0, 40, 12, bmp => DrawTurret(bmp, new Color32(65, 220, 205)));
-AddFrame("cpuTurret", 136, 0, 40, 12, bmp => DrawTurret(bmp, new Color32(255, 116, 87)));
-AddFrame("shell", 176, 0, 16, 16, bmp => DrawProjectile(bmp, new Color32(249, 218, 100)));
-AddFrame("missile", 192, 0, 24, 16, bmp => DrawMissile(bmp));
-AddFrame("shield", 216, 0, 32, 32, bmp => DrawRing(bmp, new Color32(89, 180, 255, 190)));
-AddFrame("explosionSmall", 0, 40, 32, 32, bmp => DrawBurst(bmp, new Color32(255, 246, 173), new Color32(241, 78, 55)));
-AddFrame("explosionLarge", 32, 40, 48, 48, bmp => DrawBurst(bmp, new Color32(255, 247, 178), new Color32(219, 50, 55)));
-AddFrame("nuclear", 80, 40, 56, 56, bmp => DrawBurst(bmp, new Color32(211, 255, 86), new Color32(246, 177, 60)));
-AddFrame("dirt", 136, 40, 32, 32, bmp => DrawRock(bmp));
-AddFrame("laser", 168, 40, 48, 12, bmp => DrawLaser(bmp));
+File.Copy(sourceSheet, Path.Combine(spriteRoot, "armageddon-ridge-sprites.png"), overwrite: true);
 
-atlas.WritePng(Path.Combine(spriteRoot, "armageddon-ridge-sprites.png"));
+var frames = new Dictionary<string, Frame>
+{
+    ["playerTank"] = new(63, 392, 217, 108),
+    ["cpuTank"] = new(944, 396, 215, 104),
+    ["playerTurret"] = new(321, 368, 284, 132),
+    ["cpuTurret"] = new(1213, 365, 219, 135),
+    ["shell"] = new(45, 561, 87, 35),
+    ["missile"] = new(294, 550, 143, 58),
+    ["shield"] = new(487, 541, 90, 72),
+    ["explosionSmall"] = new(86, 701, 134, 117),
+    ["explosionLarge"] = new(296, 653, 191, 179),
+    ["nuclear"] = new(565, 640, 213, 202),
+    ["dirt"] = new(487, 541, 90, 72),
+    ["laser"] = new(617, 551, 89, 52)
+};
+
 File.WriteAllText(
     Path.Combine(spriteRoot, "atlas.json"),
     JsonSerializer.Serialize(
@@ -47,83 +54,6 @@ foreach (var id in iconIds)
 }
 
 Console.WriteLine($"Wrote sprites to {spriteRoot}");
-
-void AddFrame(string name, int x, int y, int w, int h, Action<Bitmap32> draw)
-{
-    var frame = new Bitmap32(w, h, Color32.Transparent);
-    draw(frame);
-    atlas.Blit(frame, x, y);
-    frames[name] = new Frame(x, y, w, h);
-}
-
-static void DrawTank(Bitmap32 bmp, Color32 body, Color32 tread)
-{
-    var outline = new Color32(11, 15, 20);
-    var shadow = body.Darken(64);
-    var mid = body.Darken(22);
-    var light = body.Lighten(44);
-
-    bmp.FillRect(5, 22, 38, 7, outline);
-    bmp.FillRect(7, 23, 34, 4, tread);
-    bmp.FillRect(9, 27, 30, 1, tread.Lighten(28));
-    for (var x = 9; x <= 36; x += 7)
-    {
-        bmp.FillEllipse(x, 24, 3, 2, outline.Lighten(26));
-        bmp.Set(x, 24, tread.Lighten(70));
-    }
-
-    bmp.FillPolygon(
-        new[] { (7, 16), (14, 10), (32, 9), (41, 16), (43, 22), (6, 22) },
-        outline);
-    bmp.FillPolygon(
-        new[] { (9, 16), (15, 12), (31, 11), (39, 16), (40, 20), (9, 20) },
-        body);
-    bmp.FillRect(12, 18, 27, 3, mid);
-    bmp.FillRect(16, 12, 13, 2, light);
-    bmp.FillRect(31, 14, 6, 2, body.Lighten(18));
-    bmp.FillRect(11, 15, 5, 2, shadow);
-    bmp.Set(39, 17, Color32.White);
-    bmp.Set(38, 18, light);
-
-    bmp.FillRect(17, 7, 15, 5, outline);
-    bmp.FillRect(19, 6, 11, 5, body.Lighten(25));
-    bmp.FillRect(21, 6, 7, 1, light);
-    bmp.FillRect(18, 11, 14, 1, shadow);
-}
-
-static void DrawTurret(Bitmap32 bmp, Color32 color)
-{
-    var outline = new Color32(12, 15, 20);
-    bmp.FillRect(2, 3, 11, 7, outline);
-    bmp.FillRect(4, 4, 8, 5, color.Lighten(24));
-    bmp.FillRect(10, 5, 23, 5, outline);
-    bmp.FillRect(11, 5, 21, 3, color);
-    bmp.FillRect(13, 5, 13, 1, color.Lighten(40));
-    bmp.FillRect(31, 6, 6, 2, color.Darken(38));
-    bmp.Set(5, 4, Color32.White);
-}
-
-static void DrawProjectile(Bitmap32 bmp, Color32 color)
-{
-    var outline = new Color32(24, 22, 28);
-    bmp.FillEllipse(8, 8, 5, 5, outline);
-    bmp.FillEllipse(8, 8, 4, 4, color);
-    bmp.FillRect(4, 9, 3, 2, new Color32(238, 82, 58));
-    bmp.FillRect(2, 10, 2, 1, new Color32(255, 180, 66, 210));
-    bmp.Set(7, 5, Color32.White);
-    bmp.Set(10, 10, color.Darken(58));
-}
-
-static void DrawMissile(Bitmap32 bmp)
-{
-    var outline = new Color32(19, 22, 28);
-    bmp.FillPolygon(new[] { (3, 7), (7, 4), (18, 4), (22, 8), (18, 11), (7, 11) }, outline);
-    bmp.FillPolygon(new[] { (5, 7), (8, 5), (17, 5), (20, 8), (17, 10), (8, 10) }, new Color32(226, 230, 211));
-    bmp.FillRect(9, 5, 7, 1, Color32.White);
-    bmp.FillRect(16, 9, 3, 1, new Color32(154, 164, 152));
-    bmp.FillPolygon(new[] { (4, 7), (1, 5), (2, 8), (1, 11) }, new Color32(255, 188, 69, 220));
-    bmp.FillRect(17, 6, 3, 4, new Color32(232, 84, 78));
-}
 
 static void DrawRing(Bitmap32 bmp, Color32 color)
 {

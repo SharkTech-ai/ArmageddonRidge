@@ -31,7 +31,7 @@ public sealed class Tank
         return count;
     }
 
-    public bool HasWeapon(string weaponId) => weaponId == WeaponIds.PeaShell || GetInventoryCount(weaponId) != 0;
+    public bool HasWeapon(string weaponId) => weaponId == WeaponIds.PeaShell || GetInventoryCount(weaponId) > 0;
 
     public void AddWeapon(string weaponId, int count)
     {
