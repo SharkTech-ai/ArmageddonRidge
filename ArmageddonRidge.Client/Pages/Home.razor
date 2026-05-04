@@ -13,13 +13,19 @@
     @if (_state is null)
     {
         <div class="menu-band">
-            <div class="brand-block">
-                <span class="eyebrow">Blazor WebAssembly artillery showcase</span>
-                <h1>Armageddon Ridge</h1>
-                <p>Turn wind, terrain, and questionable judgement into craters.</p>
-                <p class="best-score">Best score: @_bestScore</p>
+            <div class="intro-copy">
+                <div class="brand-block">
+                    <span class="eyebrow">Blazor WebAssembly artillery showcase</span>
+                    <h1><span>Armageddon</span><span>Ridge</span></h1>
+                    <p>Wind. Terrain. Ridiculous ordnance. One more shot.</p>
+                    <p class="best-score">Best score: @_bestScore</p>
+                </div>
             </div>
             <div class="menu-actions">
+                <div class="menu-actions-head">
+                    <span class="eyebrow">Command deck</span>
+                    <strong>Duel setup</strong>
+                </div>
                 <label>
                     Difficulty
                     <select @bind="_difficulty">
