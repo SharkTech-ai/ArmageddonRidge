@@ -9,6 +9,7 @@ let renderMs = 0;
 let lastScene;
 let rafId = 0;
 let shotInProgress = false;
+const spriteManifestVersion = "2026-05-04-genesis-v3";
 const cloudBands = [
     { x: 90, y: 64, scale: 1.08, speed: 7 },
     { x: 360, y: 104, scale: 0.84, speed: 11 },
@@ -28,6 +29,10 @@ export async function initialize(element) {
 export function render(scene) {
     if (!ctx || !scene?.world) {
         return { fps: 0, frameMs: 0, renderMs: 0 };
+    }
+
+    if (shotInProgress) {
+        return getStats();
     }
 
     const started = performance.now();
@@ -54,7 +59,6 @@ export async function playShot(scene, trail, explosions, screenShake) {
         const finish = () => {
             if (!explosions?.length) {
                 setTimeout(() => {
-                    render(scene);
                     shotInProgress = false;
                     resolve();
                 }, 120);
@@ -263,8 +267,7 @@ function drawTank(tank, frameName) {
     ctx.fill();
     ctx.restore();
 
-    drawSprite(frameName, tank.x - 40, tank.y - 42, 80, 40);
-    drawTankBarrel(tank);
+    drawTankSprite(tank, frameName);
 
     if (tank.shield > 0) {
         ctx.save();
@@ -278,51 +281,41 @@ function drawTank(tank, frameName) {
     }
 }
 
-function drawTankBarrel(tank) {
-    ctx.save();
-    ctx.translate(tank.x, tank.y - 32);
-    ctx.rotate(-(tank.angle ?? 45) * Math.PI / 180);
+function drawTankSprite(tank, baseFrameName) {
+    const frameName = selectTankFrame(tank, baseFrameName);
+    const frame = manifest?.frames?.[frameName];
 
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#080b0d";
-    ctx.lineWidth = 11;
-    ctx.beginPath();
-    ctx.moveTo(3, 0);
-    ctx.lineTo(40, 0);
-    ctx.stroke();
+    if (!frame) {
+        drawSprite(baseFrameName, tank.x - 48, tank.y - 52, 96, 48);
+        return;
+    }
 
-    const barrelGradient = ctx.createLinearGradient(4, -5, 40, 5);
-    barrelGradient.addColorStop(0, "#c8d0d8");
-    barrelGradient.addColorStop(0.38, "#4c5965");
-    barrelGradient.addColorStop(0.72, "#f2f5f5");
-    barrelGradient.addColorStop(1, "#2b333b");
-    ctx.strokeStyle = barrelGradient;
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(3, 0);
-    ctx.lineTo(41, 0);
-    ctx.stroke();
+    const elevation = tankElevation(tank);
+    const targetHeight = elevation > 58 ? 74 : elevation > 28 ? 62 : 56;
+    const targetWidth = targetHeight * (frame.w / frame.h);
+    const anchorX = targetWidth * (tank.isCpu ? 0.58 : 0.42);
+    const footY = tank.y + 4;
+    drawSprite(frameName, tank.x - anchorX, footY - targetHeight, targetWidth, targetHeight);
+}
 
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(8, -2.5);
-    ctx.lineTo(31, -2.5);
-    ctx.stroke();
+function selectTankFrame(tank, baseFrameName) {
+    const prefix = tank.isCpu || baseFrameName === "cpuTank" ? "cpuTank" : "playerTank";
+    const elevation = tankElevation(tank);
+    if (elevation > 58) {
+        return `${prefix}High`;
+    }
 
-    ctx.fillStyle = tank.isCpu ? "#ff6d32" : "#23d3c7";
-    ctx.strokeStyle = "#090b0d";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 13, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    if (elevation > 28) {
+        return `${prefix}Mid`;
+    }
 
-    ctx.fillStyle = "#080b0d";
-    ctx.fillRect(38, -5, 7, 10);
-    ctx.fillStyle = "#cfd8df";
-    ctx.fillRect(40, -3, 4, 6);
-    ctx.restore();
+    return `${prefix}Low`;
+}
+
+function tankElevation(tank) {
+    const angle = Number(tank?.angle ?? (tank?.isCpu ? 138 : 42));
+    const raw = tank?.isCpu ? 180 - angle : angle;
+    return Math.max(5, Math.min(85, raw));
 }
 
 function drawSmokeStack(x, y) {
@@ -379,7 +372,6 @@ function animateExplosions(scene, explosions, screenShake) {
                 return;
             }
 
-            render(scene);
             resolve();
         };
 
@@ -488,15 +480,23 @@ function fallbackSprite(name, x, y, width, height) {
 
 async function loadSprites() {
     try {
-        const response = await fetch("assets/sprites/atlas.json", { cache: "force-cache" });
+        const response = await fetch(`assets/sprites/atlas.json?v=${spriteManifestVersion}`, { cache: "no-cache" });
         manifest = await response.json();
         atlas = new Image();
-        atlas.src = manifest.image;
+        atlas.src = cacheBustedUrl(manifest.image, manifest.version ?? spriteManifestVersion);
         await atlas.decode();
     } catch {
         manifest = { frames: {} };
         atlas = undefined;
     }
+}
+
+function cacheBustedUrl(url, version) {
+    if (!url) {
+        return url;
+    }
+
+    return `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
 }
 
 function sizeCanvas() {

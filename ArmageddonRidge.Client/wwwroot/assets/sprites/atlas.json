@@ -1,17 +1,54 @@
 {
+  "version": "2026-05-04-genesis-v3",
   "image": "assets/sprites/armageddon-ridge-sprites.png",
   "frames": {
     "playerTank": {
+      "x": 85,
+      "y": 40,
+      "w": 467,
+      "h": 264
+    },
+    "cpuTank": {
+      "x": 657,
+      "y": 40,
+      "w": 465,
+      "h": 265
+    },
+    "playerTankLow": {
       "x": 63,
       "y": 392,
       "w": 217,
       "h": 108
     },
-    "cpuTank": {
+    "playerTankMid": {
+      "x": 321,
+      "y": 367,
+      "w": 284,
+      "h": 133
+    },
+    "playerTankHigh": {
+      "x": 626,
+      "y": 333,
+      "w": 205,
+      "h": 167
+    },
+    "cpuTankLow": {
       "x": 944,
-      "y": 396,
+      "y": 395,
       "w": 215,
-      "h": 104
+      "h": 105
+    },
+    "cpuTankMid": {
+      "x": 1213,
+      "y": 365,
+      "w": 220,
+      "h": 135
+    },
+    "cpuTankHigh": {
+      "x": 1490,
+      "y": 338,
+      "w": 216,
+      "h": 162
     },
     "playerTurret": {
       "x": 321,

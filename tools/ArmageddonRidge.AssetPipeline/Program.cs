@@ -6,6 +6,7 @@ var repoRoot = FindRepoRoot();
 var spriteRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites");
 var iconRoot = Path.Combine(spriteRoot, "icons");
 var sourceSheet = Path.Combine(repoRoot, "tools", "ArmageddonRidge.AssetPipeline", "assets", "generated-tank-sheet.png");
+const string AssetVersion = "2026-05-04-genesis-v3";
 Directory.CreateDirectory(spriteRoot);
 Directory.CreateDirectory(iconRoot);
 
@@ -18,8 +19,14 @@ File.Copy(sourceSheet, Path.Combine(spriteRoot, "armageddon-ridge-sprites.png"),
 
 var frames = new Dictionary<string, Frame>
 {
-    ["playerTank"] = new(63, 392, 217, 108),
-    ["cpuTank"] = new(944, 396, 215, 104),
+    ["playerTank"] = new(85, 40, 467, 264),
+    ["cpuTank"] = new(657, 40, 465, 265),
+    ["playerTankLow"] = new(63, 392, 217, 108),
+    ["playerTankMid"] = new(321, 367, 284, 133),
+    ["playerTankHigh"] = new(626, 333, 205, 167),
+    ["cpuTankLow"] = new(944, 395, 215, 105),
+    ["cpuTankMid"] = new(1213, 365, 220, 135),
+    ["cpuTankHigh"] = new(1490, 338, 216, 162),
     ["playerTurret"] = new(321, 368, 284, 132),
     ["cpuTurret"] = new(1213, 365, 219, 135),
     ["shell"] = new(45, 561, 87, 35),
@@ -35,7 +42,7 @@ var frames = new Dictionary<string, Frame>
 File.WriteAllText(
     Path.Combine(spriteRoot, "atlas.json"),
     JsonSerializer.Serialize(
-        new { image = "assets/sprites/armageddon-ridge-sprites.png", frames },
+        new { version = AssetVersion, image = "assets/sprites/armageddon-ridge-sprites.png", frames },
         new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
 
 var iconIds = new[]

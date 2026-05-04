@@ -10,6 +10,9 @@ public sealed class AssetManifestTests
         var repoRoot = FindRepoRoot();
         var manifestPath = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites", "atlas.json");
         using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var version = document.RootElement.GetProperty("version").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(version));
+
         var image = document.RootElement.GetProperty("image").GetString();
         Assert.False(string.IsNullOrWhiteSpace(image));
 
@@ -18,7 +21,13 @@ public sealed class AssetManifestTests
         var (width, height, hasAlpha) = ReadPngHeader(imagePath);
         Assert.True(hasAlpha, "Sprite atlas should be RGBA PNG so transparent pixels stay transparent in browsers.");
 
-        foreach (var frame in document.RootElement.GetProperty("frames").EnumerateObject())
+        var frames = document.RootElement.GetProperty("frames");
+        foreach (var requiredFrame in new[] { "playerTankLow", "playerTankMid", "playerTankHigh", "cpuTankLow", "cpuTankMid", "cpuTankHigh" })
+        {
+            Assert.True(frames.TryGetProperty(requiredFrame, out _), $"Missing gameplay sprite frame {requiredFrame}.");
+        }
+
+        foreach (var frame in frames.EnumerateObject())
         {
             var value = frame.Value;
             var x = value.GetProperty("x").GetInt32();

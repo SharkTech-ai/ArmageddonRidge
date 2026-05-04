@@ -169,6 +169,7 @@
     private double _renderMs;
     private int _bestScore;
     private bool _rendererReady;
+    private bool _shotPlaybackInProgress;
     private CancellationTokenSource? _perfLoop;
 
     private string WindText => _state is null
@@ -202,7 +203,7 @@
             }
         }
 
-        if (_state is not null)
+        if (_state is not null && !_shotPlaybackInProgress)
         {
             await EnsureRendererAsync();
             await RenderSceneAsync();
@@ -278,10 +279,19 @@
 
     private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution)
     {
-        await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear) ? "nuclear" : "fire");
-        await Renderer.PlayShotAsync(preShotScene, resolution.Trail, resolution.Explosions, _screenShake && !_reducedMotion);
-        await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear || e.DamageRadius > 80) ? "largeExplosion" : "smallExplosion");
-        await RenderSceneAsync();
+        _shotPlaybackInProgress = true;
+        try
+        {
+            await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear) ? "nuclear" : "fire");
+            await Renderer.PlayShotAsync(preShotScene, resolution.Trail, resolution.Explosions, _screenShake && !_reducedMotion);
+            await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear || e.DamageRadius > 80) ? "largeExplosion" : "smallExplosion");
+        }
+        finally
+        {
+            _shotPlaybackInProgress = false;
+        }
+
+        await RenderSceneCoreAsync(force: true);
     }
 
     private async Task BuyWeaponAsync(string weaponId)
@@ -300,9 +310,11 @@
         }
     }
 
-    private async Task RenderSceneAsync()
+    private Task RenderSceneAsync() => RenderSceneCoreAsync(force: false);
+
+    private async Task RenderSceneCoreAsync(bool force)
     {
-        if (_state is null)
+        if (_state is null || (_shotPlaybackInProgress && !force))
         {
             return;
         }
@@ -333,11 +345,11 @@
         return new
         {
             world = new { width = GameConstants.WorldWidth, height = GameConstants.WorldHeight },
-            terrain = _state.Terrain.SolidTop,
+            terrain = _state.Terrain.SolidTop.ToArray(),
             wind = _state.Wind,
             phase = _state.Phase.ToString(),
             selectedWeapon = _state.SelectedWeaponId,
-            radiation = _state.RadiationZones.Select(static zone => new { x = zone.Center.X, y = zone.Center.Y, radius = zone.Radius, turns = zone.TurnsRemaining }),
+            radiation = _state.RadiationZones.Select(static zone => new { x = zone.Center.X, y = zone.Center.Y, radius = zone.Radius, turns = zone.TurnsRemaining }).ToArray(),
             player = TankDto(_state.PlayerTank),
             cpu = TankDto(_state.CpuTank)
         };
