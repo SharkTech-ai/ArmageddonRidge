@@ -1,0 +1,75 @@
+using ArmageddonRidge.Core;
+using ArmageddonRidge.Core.Content;
+using ArmageddonRidge.Core.Game;
+using ArmageddonRidge.Core.Geometry;
+using ArmageddonRidge.Core.Models;
+using ArmageddonRidge.Core.Terrain;
+
+namespace ArmageddonRidge.Tests;
+
+public sealed class GameEngineTests
+{
+    [Fact]
+    public void NewMatchSpawnsTanksOnTerrain()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123, EnableShop: false));
+
+        Assert.Equal(state.Terrain.GetSurfaceY(state.PlayerTank.Position.X), state.PlayerTank.Position.Y);
+        Assert.Equal(state.Terrain.GetSurfaceY(state.CpuTank.Position.X), state.CpuTank.Position.Y);
+    }
+
+    [Fact]
+    public void BuyingWeaponAddsInventoryAndSpendsCash()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123));
+        var before = state.PlayerTank.Cash;
+
+        var bought = engine.BuyWeapon(state, WeaponIds.HeavyShell);
+
+        Assert.True(bought);
+        Assert.True(state.PlayerTank.Cash < before);
+        Assert.Equal(1, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
+    }
+
+    [Fact]
+    public void CpuPlannerReturnsOwnedOrFreeWeapon()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(Difficulty: Difficulty.Normal, TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        engine.StartBattle(state);
+        state.CurrentTurn = TurnOwner.Cpu;
+
+        var result = engine.FireCurrentTurn(state, settings);
+
+        Assert.NotEmpty(result.Trail);
+        Assert.True(result.Performance.CpuPlanningMs >= 0);
+    }
+
+    [Fact]
+    public void FiringSettlesTanksToNearestVisibleTerrainWhenTheirColumnIsGone()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        var heights = Enumerable.Repeat((float)GameConstants.WorldHeight, GameConstants.WorldWidth).ToArray();
+        heights[140] = 500;
+        heights[180] = 500;
+        heights[1000] = 510;
+        state.Terrain.CopyFrom(new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights));
+        state.PlayerTank.Position = new Vec2(160, GameConstants.WorldHeight);
+        state.CpuTank.Position = new Vec2(1020, GameConstants.WorldHeight);
+        engine.StartBattle(state);
+
+        engine.FireCurrentTurn(state, settings, angle: 5, power: 1);
+
+        Assert.Equal(new Vec2(140, 500), state.PlayerTank.Position);
+        Assert.Equal(new Vec2(1000, 510), state.CpuTank.Position);
+        Assert.False(state.PlayerTank.IsDestroyed);
+        Assert.False(state.CpuTank.IsDestroyed);
+    }
+
+    private static GameEngine CreateEngine() => new(new WeaponCatalog(), new UpgradeCatalog());
+}

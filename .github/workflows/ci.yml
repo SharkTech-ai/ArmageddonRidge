@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore ArmageddonRidge.slnx
+
+      - name: Generate sprites
+        run: dotnet run --project tools\ArmageddonRidge.AssetPipeline\ArmageddonRidge.AssetPipeline.csproj
+
+      - name: Format check
+        run: dotnet format ArmageddonRidge.slnx --verify-no-changes
+
+      - name: Test
+        run: dotnet test ArmageddonRidge.Tests\ArmageddonRidge.Tests.csproj --no-restore --configuration Release
+
+      - name: Publish static app
+        run: dotnet publish ArmageddonRidge.Client\ArmageddonRidge.Client.csproj -c Release --no-restore
+
+      - name: Upload static artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: armageddon-ridge-wwwroot
+          path: ArmageddonRidge.Client/bin/Release/net10.0/publish/wwwroot

@@ -1,0 +1,486 @@
+@page "/"
+@inject GameEngine Engine
+@inject WeaponCatalog Weapons
+@inject UpgradeCatalog Upgrades
+@inject CanvasRenderer Renderer
+@inject AudioService Audio
+@inject BrowserStorage Storage
+@implements IAsyncDisposable
+
+<PageTitle>Armageddon Ridge</PageTitle>
+
+<section class="game-root" @onkeydown="HandleKeyDown" tabindex="0">
+    @if (_state is null)
+    {
+        <div class="menu-band">
+            <div class="brand-block">
+                <span class="eyebrow">Blazor WebAssembly artillery showcase</span>
+                <h1>Armageddon Ridge</h1>
+                <p>Turn wind, terrain, and questionable judgement into craters.</p>
+                <p class="best-score">Best score: @_bestScore</p>
+            </div>
+            <div class="menu-actions">
+                <label>
+                    Difficulty
+                    <select @bind="_difficulty">
+                        @foreach (var difficulty in Enum.GetValues<Difficulty>())
+                        {
+                            <option value="@difficulty">@difficulty</option>
+                        }
+                    </select>
+                </label>
+                <button class="primary" @onclick="NewDuelAsync">New Duel</button>
+                <button @onclick="ToggleSettings">Settings</button>
+                <a class="ghost-link" href="benchmarks">Benchmarks</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="battle-layout">
+            <section class="battlefield-panel">
+                <canvas @ref="_canvas" class="battlefield" width="1200" height="700" aria-label="Armageddon Ridge battlefield"></canvas>
+                @if (!string.IsNullOrWhiteSpace(_taunt))
+                {
+                    <div class="taunt">@_taunt</div>
+                }
+                @if (_showPerf)
+                {
+                    <div class="perf-overlay">
+                        <strong>Perf</strong>
+                        <span>FPS: @_fps</span>
+                        <span>Frame: @_frameMs.ToString("0.00") ms</span>
+                        <span>Render: @_renderMs.ToString("0.00") ms</span>
+                        <span>Sim: @_state.LastPerformance.SimulationMs.ToString("0.00") ms</span>
+                        <span>Terrain: @_state.LastPerformance.TerrainMs.ToString("0.00") ms</span>
+                        <span>CPU: @_state.LastPerformance.CpuPlanningMs.ToString("0.00") ms</span>
+                        <span>Trail: @_state.LastPerformance.TrailPoints</span>
+                    </div>
+                }
+            </section>
+
+            <aside class="hud-panel">
+                <header class="hud-header">
+                    <div>
+                        <span class="eyebrow">Round @_state.RoundNumber</span>
+                        <h2>@_state.Phase</h2>
+                    </div>
+                    <button title="Toggle performance overlay" @onclick="TogglePerf">FPS</button>
+                </header>
+
+                <div class="tank-bars">
+                    <TankReadout Label="Player" Tank="_state.PlayerTank" />
+                    <TankReadout Label="CPU" Tank="_state.CpuTank" />
+                </div>
+
+                <div class="wind-card">
+                    <span>Wind</span>
+                    <strong>@WindText</strong>
+                </div>
+
+                @if (_state.Phase == GamePhase.Shop)
+                {
+                    <ShopPanel Weapons="Weapons.All"
+                               Upgrades="Upgrades.All"
+                               State="_state"
+                               OnBuyWeapon="BuyWeaponAsync"
+                               OnBuyUpgrade="BuyUpgradeAsync"
+                               OnStartBattle="StartBattleAsync" />
+                }
+                else if (_state.Phase == GamePhase.RoundOver)
+                {
+                    <div class="modal-card">
+                        <h3>@RoundResult</h3>
+                        <p>Damage dealt: @_state.DamageDealtByPlayer.ToString("0")</p>
+                        <p>Shots fired: @_state.ShotsFired</p>
+                        <p>Cash: @_state.PlayerTank.Cash</p>
+                        <button class="primary" @onclick="NextRoundAsync">Continue to shop</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="controls-card">
+                        <label>
+                            Weapon
+                            <select @bind="_state.SelectedWeaponId">
+                                @foreach (var weapon in AvailablePlayerWeapons)
+                                {
+                                    <option value="@weapon.Id">@weapon.DisplayName (@InventoryLabel(weapon.Id))</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Angle <strong>@_state.PlayerTank.TurretAngle.ToString("0")</strong>
+                            <input type="range" min="5" max="85" step="1" @bind="_state.PlayerTank.TurretAngle" @bind:event="oninput" @onchange="RenderSceneAsync" />
+                        </label>
+                        <label>
+                            Power <strong>@_power</strong>
+                            <input type="range" min="1" max="100" step="1" @bind="_power" @bind:event="oninput" />
+                        </label>
+                        <button class="fire-button" disabled="@(!_canFire)" @onclick="FirePlayerAsync">Fire</button>
+                        <p class="hint">@HintText</p>
+                    </div>
+                }
+            </aside>
+        </div>
+    }
+
+    @if (_settingsOpen)
+    {
+        <div class="settings-drawer">
+            <h2>Settings</h2>
+            <label><input type="checkbox" @bind="_screenShake" /> Screen shake</label>
+            <label><input type="checkbox" @bind="_reducedMotion" /> Reduced motion</label>
+            <label>
+                SFX volume
+                <input type="range" min="0" max="1" step="0.05" @bind="_sfxVolume" @bind:event="oninput" @onchange="ApplyAudioSettingsAsync" />
+            </label>
+            <button @onclick="ToggleSettings">Close</button>
+        </div>
+    }
+</section>
+
+@code {
+    private ElementReference _canvas;
+    private GameState? _state;
+    private MatchSettings _settings = new();
+    private Difficulty _difficulty = Difficulty.Normal;
+    private int _power = 65;
+    private bool _canFire = true;
+    private bool _showPerf;
+    private bool _settingsOpen;
+    private bool _screenShake = true;
+    private bool _reducedMotion;
+    private float _sfxVolume = 0.9f;
+    private string _taunt = "";
+    private int _fps = 60;
+    private double _frameMs = 16.7;
+    private double _renderMs;
+    private int _bestScore;
+    private bool _rendererReady;
+    private CancellationTokenSource? _perfLoop;
+
+    private string WindText => _state is null
+        ? "0"
+        : $"{(_state.Wind > 0 ? "->" : _state.Wind < 0 ? "<-" : "--")} {Math.Abs(_state.Wind)}";
+
+    private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
+
+    private string HintText => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true
+        ? "Targeting computer armed. The projected arc is approximate."
+        : "Watch the last trail, then correct angle and power.";
+
+    private IEnumerable<WeaponDefinition> AvailablePlayerWeapons =>
+        Weapons.All.Where(weapon => _state?.PlayerTank.HasWeapon(weapon.Id) == true || weapon.Id == WeaponIds.PeaShell);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Audio.InitializeAsync();
+            var save = await Storage.GetAsync<SaveGame>("armageddon-ridge-save");
+            if (save is not null)
+            {
+                _bestScore = save.BestScore;
+                _difficulty = save.Settings.Difficulty;
+                _sfxVolume = save.Settings.SfxVolume;
+                _screenShake = save.Settings.ScreenShake;
+                _reducedMotion = save.Settings.ReducedMotion;
+                await Audio.SetVolumeAsync(_sfxVolume);
+                StateHasChanged();
+            }
+        }
+
+        if (_state is not null)
+        {
+            await EnsureRendererAsync();
+            await RenderSceneAsync();
+        }
+    }
+
+    private async Task NewDuelAsync()
+    {
+        _settings = new MatchSettings(Difficulty: _difficulty, TerrainSeed: Random.Shared.Next(10_000, 99_999));
+        _state = Engine.NewMatch(_settings);
+        _taunt = "";
+        await Audio.UnlockAsync();
+        await Audio.PlayAsync("menu");
+    }
+
+    private async Task StartBattleAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        Engine.StartBattle(_state);
+        await Audio.PlayAsync("menu");
+        await RenderSceneAsync();
+    }
+
+    private async Task NextRoundAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        Engine.StartNextRound(_state, _settings);
+        await RenderSceneAsync();
+    }
+
+    private async Task FirePlayerAsync()
+    {
+        if (_state is null || _state.CurrentTurn != TurnOwner.Player || _state.Phase != GamePhase.Battle)
+        {
+            return;
+        }
+
+        _canFire = false;
+        await Audio.UnlockAsync();
+        var playerPreShotScene = BuildScene();
+        var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
+        await PlayResolutionAsync(playerPreShotScene, playerShot);
+
+        if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
+        {
+            await Task.Delay(_reducedMotion ? 250 : 700);
+            var cpuPreShotScene = BuildScene();
+            var cpuShot = Engine.FireCurrentTurn(_state, _settings);
+            _taunt = cpuShot.Events.FirstOrDefault(static e => e.Contains("Wind", StringComparison.OrdinalIgnoreCase)
+                || e.Contains("Calculating", StringComparison.OrdinalIgnoreCase)
+                || e.Contains("warhead", StringComparison.OrdinalIgnoreCase)
+                || e.Contains("crater", StringComparison.OrdinalIgnoreCase)
+                || e.Contains("hill", StringComparison.OrdinalIgnoreCase)) ?? "";
+            await PlayResolutionAsync(cpuPreShotScene, cpuShot);
+        }
+
+        _canFire = true;
+        if (_state.Phase == GamePhase.RoundOver)
+        {
+            await PersistSaveAsync();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution)
+    {
+        await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear) ? "nuclear" : "fire");
+        await Renderer.PlayShotAsync(preShotScene, resolution.Trail, resolution.Explosions, _screenShake && !_reducedMotion);
+        await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear || e.DamageRadius > 80) ? "largeExplosion" : "smallExplosion");
+        await RenderSceneAsync();
+    }
+
+    private async Task BuyWeaponAsync(string weaponId)
+    {
+        if (_state is not null && Engine.BuyWeapon(_state, weaponId))
+        {
+            await Audio.PlayAsync("menu");
+        }
+    }
+
+    private async Task BuyUpgradeAsync(UpgradeType upgrade)
+    {
+        if (_state is not null && Engine.BuyUpgrade(_state, upgrade))
+        {
+            await Audio.PlayAsync("shield");
+        }
+    }
+
+    private async Task RenderSceneAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        await EnsureRendererAsync();
+        var stats = await Renderer.RenderAsync(BuildScene());
+        ApplyStats(stats);
+    }
+
+    private async Task EnsureRendererAsync()
+    {
+        if (_rendererReady || _state is null)
+        {
+            return;
+        }
+
+        await Renderer.InitializeAsync(_canvas);
+        _rendererReady = true;
+    }
+
+    private object BuildScene()
+    {
+        if (_state is null)
+        {
+            return new { };
+        }
+
+        return new
+        {
+            world = new { width = GameConstants.WorldWidth, height = GameConstants.WorldHeight },
+            terrain = _state.Terrain.SolidTop,
+            wind = _state.Wind,
+            phase = _state.Phase.ToString(),
+            selectedWeapon = _state.SelectedWeaponId,
+            radiation = _state.RadiationZones.Select(static zone => new { x = zone.Center.X, y = zone.Center.Y, radius = zone.Radius, turns = zone.TurnsRemaining }),
+            player = TankDto(_state.PlayerTank),
+            cpu = TankDto(_state.CpuTank)
+        };
+    }
+
+    private static object TankDto(Tank tank) => new
+    {
+        id = tank.Id,
+        x = tank.Position.X,
+        y = tank.Position.Y,
+        angle = tank.TurretAngle,
+        health = tank.Health,
+        shield = tank.Shield,
+        isCpu = tank.IsCpu
+    };
+
+    private string InventoryLabel(string weaponId)
+    {
+        var count = _state?.PlayerTank.GetInventoryCount(weaponId) ?? 0;
+        return weaponId == WeaponIds.PeaShell || count < 0 ? "inf" : count.ToString();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        switch (args.Key)
+        {
+            case "ArrowLeft":
+                _state.PlayerTank.TurretAngle = Math.Max(5, _state.PlayerTank.TurretAngle - (args.ShiftKey ? 5 : 1));
+                await RenderSceneAsync();
+                break;
+            case "ArrowRight":
+                _state.PlayerTank.TurretAngle = Math.Min(85, _state.PlayerTank.TurretAngle + (args.ShiftKey ? 5 : 1));
+                await RenderSceneAsync();
+                break;
+            case "ArrowUp":
+                _power = Math.Min(100, _power + 2);
+                break;
+            case "ArrowDown":
+                _power = Math.Max(1, _power - 2);
+                break;
+            case " ":
+                await FirePlayerAsync();
+                break;
+            case "Tab":
+                CycleWeapon();
+                break;
+            case "Escape":
+                ToggleSettings();
+                break;
+            case "`":
+                TogglePerf();
+                break;
+        }
+    }
+
+    private void CycleWeapon()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        var weapons = AvailablePlayerWeapons.ToArray();
+        var current = Array.FindIndex(weapons, weapon => weapon.Id == _state.SelectedWeaponId);
+        _state.SelectedWeaponId = weapons[(current + 1 + weapons.Length) % weapons.Length].Id;
+    }
+
+    private void TogglePerf()
+    {
+        _showPerf = !_showPerf;
+        if (_showPerf)
+        {
+            StartPerfLoop();
+        }
+        else
+        {
+            StopPerfLoop();
+        }
+    }
+
+    private void ToggleSettings() => _settingsOpen = !_settingsOpen;
+
+    private async Task ApplyAudioSettingsAsync()
+    {
+        await Audio.SetVolumeAsync(_sfxVolume);
+        await PersistSaveAsync();
+    }
+
+    private async Task PersistSaveAsync()
+    {
+        var cash = _state?.PlayerTank.Cash ?? 0;
+        _bestScore = Math.Max(_bestScore, cash);
+        var save = new SaveGame(
+            _bestScore,
+            _state?.RoundNumber ?? 1,
+            _state?.PlayerTank.IsDestroyed == true ? 1 : 0,
+            Weapons.All.Select(static weapon => weapon.Id).ToArray(),
+            _state?.SelectedWeaponId ?? WeaponIds.PeaShell,
+            new GameSettings(SfxVolume: _sfxVolume, ScreenShake: _screenShake, ReducedMotion: _reducedMotion, Difficulty: _difficulty));
+        await Storage.SetAsync("armageddon-ridge-save", save);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopPerfLoop();
+        await Renderer.DisposeAsync();
+        await Audio.DisposeAsync();
+    }
+
+    private void ApplyStats(RenderStats? stats)
+    {
+        if (stats is null)
+        {
+            return;
+        }
+
+        _fps = stats.Fps;
+        _frameMs = stats.FrameMs;
+        _renderMs = stats.RenderMs;
+    }
+
+    private void StartPerfLoop()
+    {
+        StopPerfLoop();
+        _perfLoop = new CancellationTokenSource();
+        _ = PollPerfAsync(_perfLoop.Token);
+    }
+
+    private void StopPerfLoop()
+    {
+        _perfLoop?.Cancel();
+        _perfLoop?.Dispose();
+        _perfLoop = null;
+    }
+
+    private async Task PollPerfAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(250, cancellationToken);
+                ApplyStats(await Renderer.GetStatsAsync());
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+}

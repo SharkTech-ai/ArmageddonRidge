@@ -1,0 +1,77 @@
+{
+  "image": "assets/sprites/armageddon-ridge-sprites.png",
+  "frames": {
+    "playerTank": {
+      "x": 0,
+      "y": 0,
+      "w": 48,
+      "h": 32
+    },
+    "cpuTank": {
+      "x": 48,
+      "y": 0,
+      "w": 48,
+      "h": 32
+    },
+    "playerTurret": {
+      "x": 96,
+      "y": 0,
+      "w": 40,
+      "h": 12
+    },
+    "cpuTurret": {
+      "x": 136,
+      "y": 0,
+      "w": 40,
+      "h": 12
+    },
+    "shell": {
+      "x": 176,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "missile": {
+      "x": 192,
+      "y": 0,
+      "w": 24,
+      "h": 16
+    },
+    "shield": {
+      "x": 216,
+      "y": 0,
+      "w": 32,
+      "h": 32
+    },
+    "explosionSmall": {
+      "x": 0,
+      "y": 40,
+      "w": 32,
+      "h": 32
+    },
+    "explosionLarge": {
+      "x": 32,
+      "y": 40,
+      "w": 48,
+      "h": 48
+    },
+    "nuclear": {
+      "x": 80,
+      "y": 40,
+      "w": 56,
+      "h": 56
+    },
+    "dirt": {
+      "x": 136,
+      "y": 40,
+      "w": 32,
+      "h": 32
+    },
+    "laser": {
+      "x": 168,
+      "y": 40,
+      "w": 48,
+      "h": 12
+    }
+  }
+}

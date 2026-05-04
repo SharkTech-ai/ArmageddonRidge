@@ -1,0 +1,52 @@
+@using ArmageddonRidge.Core.Models
+
+<div class="shop-panel">
+    <div class="shop-head">
+        <div>
+            <span class="eyebrow">Cash</span>
+            <strong>@State.PlayerTank.Cash</strong>
+        </div>
+        <button class="primary" @onclick="OnStartBattle">Start battle</button>
+    </div>
+
+    <div class="shop-list">
+        <h3>Weapons</h3>
+        @foreach (var weapon in Weapons.Where(static weapon => weapon.Cost > 0))
+        {
+            <article class="shop-item">
+                <img src="@IconFor(weapon.Id)" alt="" />
+                <div>
+                    <strong>@weapon.DisplayName</strong>
+                    <span>@weapon.Cost cash</span>
+                    <small>@weapon.Description</small>
+                </div>
+                <button disabled="@(State.PlayerTank.Cash < weapon.Cost)" @onclick="() => OnBuyWeapon.InvokeAsync(weapon.Id)">Buy</button>
+            </article>
+        }
+
+        <h3>Defense</h3>
+        @foreach (var upgrade in Upgrades)
+        {
+            <article class="shop-item">
+                <img src="@IconFor(upgrade.Type.ToString())" alt="" />
+                <div>
+                    <strong>@upgrade.DisplayName</strong>
+                    <span>@upgrade.Cost cash</span>
+                    <small>@upgrade.Description</small>
+                </div>
+                <button disabled="@(State.PlayerTank.Cash < upgrade.Cost)" @onclick="() => OnBuyUpgrade.InvokeAsync(upgrade.Type)">Buy</button>
+            </article>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public required IReadOnlyCollection<WeaponDefinition> Weapons { get; set; }
+    [Parameter] public required IReadOnlyCollection<UpgradeDefinition> Upgrades { get; set; }
+    [Parameter] public required GameState State { get; set; }
+    [Parameter] public required EventCallback<string> OnBuyWeapon { get; set; }
+    [Parameter] public required EventCallback<UpgradeType> OnBuyUpgrade { get; set; }
+    [Parameter] public required EventCallback OnStartBattle { get; set; }
+
+    private static string IconFor(string id) => $"assets/sprites/icons/{id.ToLowerInvariant()}.png";
+}

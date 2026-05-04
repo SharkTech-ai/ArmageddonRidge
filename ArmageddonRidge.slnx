@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/tools/">
+    <Project Path="tools/ArmageddonRidge.AssetPipeline/ArmageddonRidge.AssetPipeline.csproj" />
+  </Folder>
+  <Project Path="ArmageddonRidge.Client/ArmageddonRidge.Client.csproj" />
+  <Project Path="ArmageddonRidge.Core/ArmageddonRidge.Core.csproj" />
+  <Project Path="ArmageddonRidge.Tests/ArmageddonRidge.Tests.csproj" />
+</Solution>
