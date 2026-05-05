@@ -1,8 +1,22 @@
+import { clamp, clamp01, hash2d, positiveModulo, quadraticScalar } from "./rendering/math.js";
+import { configureSprites, drawOrientedSprite, drawSprite, drawSpriteFacing, loadSprites } from "./rendering/sprites.js";
+import {
+    isDarkEagleWeapon,
+    isDroneWeapon,
+    isLaserExplosion,
+    isLaserWeapon,
+    isLavaExplosion,
+    isMirvWeapon,
+    isMissileWeapon,
+    isMopWeapon,
+    isNapalmWeapon,
+    isPatriotExplosion,
+    isPenetratorExplosion,
+    isShieldHitExplosion
+} from "./rendering/weaponVisuals.js";
+
 let canvas;
 let ctx;
-let atlas;
-let extraSprites = {};
-let manifest;
 let lastFrame = performance.now();
 let fps = 60;
 let frameMs = 16.7;
@@ -32,7 +46,8 @@ export async function initialize(element) {
     canvas = element;
     ctx = canvas.getContext("2d", { alpha: false });
     ctx.imageSmoothingEnabled = false;
-    await loadSprites();
+    configureSprites(() => ctx);
+    await loadSprites(spriteManifestVersion);
     startStatsLoop();
 }
 
@@ -1495,11 +1510,6 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     ctx.restore();
 }
 
-function quadraticScalar(a, b, c, t) {
-    const inv = 1 - t;
-    return (inv * inv * a) + (2 * inv * t * b) + (t * t * c);
-}
-
 function drawPatriotReticle(x, y, alpha, now, scale = 1) {
     const pulse = 0.72 + Math.sin(now * 0.018) * 0.28;
     const spin = now * 0.0045;
@@ -2163,33 +2173,6 @@ function drawRadioactiveGlyph(x, y, size, alpha = 1) {
     ctx.restore();
 }
 
-function isMissileWeapon(weaponId) {
-    const id = String(weaponId ?? "").toLowerCase();
-    return id.includes("missile") || id.includes("rocket") || id.includes("nuke") || id.includes("napalm")
-        || id.includes("dark-eagle") || id.includes("hypersonic") || id.includes("shahed") || id.includes("drone")
-        || id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
-}
-
-function isLaserWeapon(weaponId, visualKind) {
-    const id = String(weaponId ?? "").toLowerCase();
-    const kind = String(visualKind ?? "").toLowerCase();
-    return id.includes("laser") || kind.includes("laser");
-}
-
-function isDroneWeapon(weaponId) {
-    const id = String(weaponId ?? "").toLowerCase();
-    return id.includes("shahed") || id.includes("drone");
-}
-
-function isDarkEagleWeapon(weaponId) {
-    return String(weaponId ?? "").toLowerCase().includes("dark-eagle");
-}
-
-function isMirvWeapon(weaponId) {
-    const id = String(weaponId ?? "").toLowerCase();
-    return id.includes("mirv") || id.includes("splitter");
-}
-
 function shotDuration(pointCount, weaponId) {
     if (isDarkEagleWeapon(weaponId)) {
         return 2900;
@@ -2221,50 +2204,6 @@ function darkEagleFlightProgress(t) {
     }
 
     return 0.48 + (Math.pow((t - 0.64) / 0.36, 1.9) * 0.52);
-}
-
-function isMopWeapon(weaponId) {
-    const id = String(weaponId ?? "").toLowerCase();
-    return id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
-}
-
-function isNapalmWeapon(weaponId) {
-    const id = String(weaponId ?? "").toLowerCase();
-    return id.includes("napalm") || id.includes("lava");
-}
-
-function isLavaExplosion(explosion) {
-    const id = String(explosion.weaponId ?? explosion.weapon ?? explosion.kind ?? "").toLowerCase();
-    return Boolean(explosion.lava || explosion.napalm || id === "napalm-flask" || id.includes("napalm") || id.includes("lava"));
-}
-
-function isPatriotExplosion(explosion) {
-    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
-    return Boolean(explosion.patriotIntercept || kind.includes("patriot"));
-}
-
-function isShieldHitExplosion(explosion) {
-    if (isPatriotExplosion(explosion)) {
-        return false;
-    }
-
-    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
-    return Boolean(explosion.shieldHit
-        || explosion.shieldAbsorbed
-        || explosion.absorbedByShield
-        || Number(explosion.shieldDamage ?? explosion.shieldAbsorption ?? 0) > 0
-        || kind.includes("shield"));
-}
-
-function isLaserExplosion(explosion) {
-    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
-    const id = String(explosion.weaponId ?? explosion.weapon ?? "").toLowerCase();
-    return kind.includes("laser") || id.includes("laser");
-}
-
-function isPenetratorExplosion(explosion) {
-    const kind = String(explosion.visualKind ?? explosion.kind ?? explosion.weaponId ?? "").toLowerCase();
-    return kind.includes("penetrator") || kind.includes("mop") || kind.includes("gbu");
 }
 
 function drawPatriotIntercept(explosion, radius, progress) {
@@ -2315,79 +2254,6 @@ function drawPenetratorShock(explosion, radius, progress) {
     ctx.fill();
 }
 
-function drawSprite(name, x, y, width, height) {
-    const frame = manifest?.frames?.[name];
-    if (!atlas || !frame) {
-        fallbackSprite(name, x, y, width, height);
-        return;
-    }
-
-    ctx.drawImage(atlas, frame.x, frame.y, frame.w, frame.h, x, y, width, height);
-}
-
-function drawOrientedSprite(name, x, y, width, height, angle) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    drawSprite(name, -width * 0.5, -height * 0.5, width, height);
-    ctx.restore();
-}
-
-function drawSpriteFacing(name, x, y, width, height, facing = 1) {
-    if (facing >= 0) {
-        drawSprite(name, x, y, width, height);
-        return;
-    }
-
-    ctx.save();
-    ctx.translate(x + width, y);
-    ctx.scale(-1, 1);
-    drawSprite(name, 0, 0, width, height);
-    ctx.restore();
-}
-
-function fallbackSprite(name, x, y, width, height) {
-    ctx.fillStyle = name.includes("cpu") ? "#ec6a5c" : "#50c5b7";
-    ctx.fillRect(x, y + height * 0.25, width, height * 0.55);
-    ctx.fillStyle = "#111418";
-    ctx.fillRect(x + width * 0.12, y + height * 0.78, width * 0.76, height * 0.12);
-}
-
-async function loadSprites() {
-    try {
-        const response = await fetch(`assets/sprites/atlas.json?v=${spriteManifestVersion}`, { cache: "no-cache" });
-        manifest = await response.json();
-        atlas = new Image();
-        atlas.src = cacheBustedUrl(manifest.image, manifest.version ?? spriteManifestVersion);
-        await atlas.decode();
-    } catch {
-        manifest = { frames: {} };
-        atlas = undefined;
-    }
-
-    extraSprites = {};
-    await Promise.allSettled([
-        loadExtraSprite("shahedDrone", "assets/sprites/shahed-drone.png"),
-        loadExtraSprite("gbu57Mop", "assets/sprites/gbu-57-mop.png"),
-        loadExtraSprite("lavaPool", "assets/sprites/lava-pool.png")
-    ]);
-}
-
-async function loadExtraSprite(name, url) {
-    const image = new Image();
-    image.src = cacheBustedUrl(url, spriteManifestVersion);
-    await image.decode();
-    extraSprites[name] = image;
-}
-
-function cacheBustedUrl(url, version) {
-    if (!url) {
-        return url;
-    }
-
-    return `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
-}
-
 function sizeCanvas() {
     const rect = canvas.getBoundingClientRect();
     const nextWidth = Math.max(1, Math.floor(rect.width * devicePixelRatio));
@@ -2424,21 +2290,4 @@ function startStatsLoop() {
     };
 
     rafId = requestAnimationFrame(tick);
-}
-
-function hash2d(x, y) {
-    const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-    return Math.abs(Math.floor(value));
-}
-
-function positiveModulo(value, divisor) {
-    return ((value % divisor) + divisor) % divisor;
-}
-
-function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-    return clamp(Number.isFinite(value) ? value : 0.45, 0, 1);
 }
