@@ -86,6 +86,23 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void PreviewPlayerShotIgnoresWindForTargetingAid()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        engine.StartBattle(state);
+
+        state.Wind = GameConstants.WindMin;
+        var leftWind = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+        state.Wind = GameConstants.WindMax;
+        var rightWind = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+
+        Assert.NotEmpty(leftWind);
+        Assert.Equal(leftWind, rightWind);
+    }
+
+    [Fact]
     public void WindStaysInsidePlayableRange()
     {
         var engine = CreateEngine();

@@ -224,8 +224,10 @@
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
-    private string HintText => HasTrajectoryPreview
-        ? "Trajectory aid armed. The projected arc is approximate."
+    private string HintText => HasTargetingComputer
+        ? "Targeting computer estimates the launch arc. Wind still matters."
+        : HasTracerRounds
+            ? "Tracer rounds help you read the last shot trail."
         : "Watch the last trail, then correct angle and power.";
 
     private IEnumerable<WeaponDefinition> AvailablePlayerWeapons =>
@@ -469,32 +471,85 @@
         return new { type, intensity };
     }
 
-    private bool HasTrajectoryPreview => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TracerRounds) == true
-        || _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true;
+    private bool HasTracerRounds => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TracerRounds) == true;
 
-    private object[] PreviewTrailDto()
+    private bool HasTargetingComputer => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true;
+
+    private object PreviewTrailDto()
     {
-        if (_state is null || !HasTrajectoryPreview)
+        if (_state is null || !HasTargetingComputer)
         {
-            return [];
+            return EmptyPreview();
         }
 
         var trail = Engine.PreviewPlayerShot(_state, _state.PlayerTank.TurretAngle, _power);
-        if (trail.Count == 0)
+        if (trail.Count < 3)
         {
-            return [];
+            return EmptyPreview();
         }
 
-        var preview = new List<object>(Math.Min(90, trail.Count));
-        for (var i = 0; i < trail.Count; i += 3)
+        var apexIndex = 0;
+        var apexY = float.MaxValue;
+        for (var i = 0; i < trail.Count; i++)
+        {
+            if (trail[i].Y < apexY)
+            {
+                apexY = trail[i].Y;
+                apexIndex = i;
+            }
+        }
+
+        var path = new List<object>(Math.Min(48, apexIndex + 1));
+        var step = Math.Max(1, apexIndex / 42);
+        for (var i = 0; i <= apexIndex; i += step)
         {
             var point = trail[i];
-            preview.Add(new { x = point.X, y = point.Y });
+            path.Add(new { x = point.X, y = point.Y });
         }
 
-        var last = trail[^1];
-        preview.Add(new { x = last.X, y = last.Y });
-        return [.. preview];
+        var apex = trail[apexIndex];
+        path.Add(new { x = apex.X, y = apex.Y });
+
+        var remaining = trail.Count - apexIndex - 1;
+        if (remaining <= 0)
+        {
+            return new { path = path.ToArray(), cone = Array.Empty<object>() };
+        }
+
+        var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.26f), 2, 32);
+        var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
+        var direction = coneCenter - apex;
+        if (direction.LengthSquared() < 0.001f)
+        {
+            return new { path = path.ToArray(), cone = Array.Empty<object>() };
+        }
+
+        direction = Vector2.Normalize(direction);
+        var normal = new Vector2(-direction.Y, direction.X);
+        var distance = Vector2.Distance(apex, coneCenter);
+        var jitter = TinyPreviewNoise(_state.RandomSeed, _state.RoundNumber, _state.PlayerTank.TurretAngle, _power);
+        var width = Math.Clamp((distance * 0.075f) + MathF.Abs(jitter), 10f, 28f);
+        var left = coneCenter + (normal * (width + jitter));
+        var right = coneCenter - (normal * (width - jitter * 0.5f));
+
+        return new
+        {
+            path = path.ToArray(),
+            cone = new object[]
+            {
+                new { x = apex.X, y = apex.Y },
+                new { x = left.X, y = left.Y },
+                new { x = right.X, y = right.Y }
+            }
+        };
+    }
+
+    private static object EmptyPreview() => new { path = Array.Empty<object>(), cone = Array.Empty<object>() };
+
+    private static float TinyPreviewNoise(int seed, int round, float angle, int power)
+    {
+        var hash = HashCode.Combine(seed, round, (int)MathF.Round(angle * 10), power);
+        return (((hash & int.MaxValue) % 401) - 200) / 100f;
     }
 
     private string InventoryLabel(string weaponId)

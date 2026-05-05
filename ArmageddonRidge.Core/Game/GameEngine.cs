@@ -224,7 +224,7 @@ public sealed class GameEngine
 
         return weapon.Id == WeaponIds.DarkEagle
             ? SimulateGuidedDarkEagle(state.PlayerTank, state.CpuTank, weapon).Trail
-            : _projectileSimulator.Simulate(state.Terrain, state.PlayerTank, state.CpuTank, weapon, angle, power, state.Wind, 60 * 6).Trail;
+            : _projectileSimulator.Simulate(state.Terrain, state.PlayerTank, state.CpuTank, weapon, angle, power, 0, 60 * 6).Trail;
     }
 
     private WeaponSimulation SimulateWeapon(GameState state, Tank owner, Tank opponent, WeaponDefinition weapon, float angle, int power)

@@ -709,30 +709,33 @@ function drawWind(wind) {
     ctx.fillText(`Wind ${arrow} ${Math.abs(wind ?? 0)}`, 545, 42);
 }
 
-function drawAimPreview(points) {
-    if (!points?.length || points.length < 2) {
+function drawAimPreview(preview) {
+    const points = Array.isArray(preview) ? preview : preview?.path;
+    const cone = Array.isArray(preview?.cone) ? preview.cone : [];
+    if ((!points?.length || points.length < 2) && cone.length < 3) {
         return;
     }
 
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.setLineDash([9, 10]);
-    ctx.strokeStyle = "rgba(255, 248, 217, 0.36)";
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    for (let index = 0; index < points.length; index++) {
-        const point = points[index];
-        if (index === 0) {
-            ctx.moveTo(point.x, point.y);
-        } else {
-            ctx.lineTo(point.x, point.y);
-        }
-    }
-    ctx.stroke();
 
-    ctx.strokeStyle = "rgba(126, 226, 213, 0.86)";
-    ctx.lineWidth = 3;
+    if (points?.length >= 2) {
+        drawPreviewPath(points, "rgba(255, 248, 217, 0.34)", 7);
+        drawPreviewPath(points, "rgba(126, 226, 213, 0.84)", 3);
+    }
+
+    if (cone.length >= 3) {
+        drawPreviewCone(cone);
+    }
+
+    ctx.restore();
+}
+
+function drawPreviewPath(points, color, width) {
+    ctx.setLineDash([9, 10]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
     ctx.beginPath();
     for (let index = 0; index < points.length; index++) {
         const point = points[index];
@@ -744,13 +747,59 @@ function drawAimPreview(points) {
     }
     ctx.stroke();
     ctx.setLineDash([]);
+}
 
-    const last = points[points.length - 1];
-    ctx.fillStyle = "rgba(126, 226, 213, 0.72)";
+function drawPreviewCone(cone) {
+    const apex = cone[0];
+    const left = cone[1];
+    const right = cone[2];
+    const now = performance.now() * 0.001;
+
+    const gradient = ctx.createLinearGradient(apex.x, apex.y, (left.x + right.x) * 0.5, (left.y + right.y) * 0.5);
+    gradient.addColorStop(0, "rgba(126, 226, 213, 0.24)");
+    gradient.addColorStop(1, "rgba(126, 226, 213, 0.04)");
+    ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+    ctx.moveTo(apex.x, apex.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.closePath();
     ctx.fill();
-    ctx.restore();
+
+    ctx.setLineDash([7, 8]);
+    ctx.strokeStyle = "rgba(126, 226, 213, 0.74)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(apex.x, apex.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.moveTo(apex.x, apex.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const centerX = (left.x + right.x) * 0.5;
+    const centerY = (left.y + right.y) * 0.5;
+    ctx.strokeStyle = "rgba(255, 248, 217, 0.28)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(apex.x, apex.y);
+    for (let i = 1; i <= 8; i++) {
+        const t = i / 8;
+        const wobble = Math.sin(now * 2.4 + i * 1.7) * t * 2.2;
+        const x = apex.x + ((centerX - apex.x) * t);
+        const y = apex.y + ((centerY - apex.y) * t) + wobble;
+        ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    for (let i = 1; i <= 5; i++) {
+        const t = i / 6;
+        const edgeT = 0.25 + (hash2d(i, Math.round(apex.x)) % 50) / 100;
+        const x = apex.x + (((left.x + ((right.x - left.x) * edgeT)) - apex.x) * t);
+        const y = apex.y + (((left.y + ((right.y - left.y) * edgeT)) - apex.y) * t);
+        ctx.fillStyle = `rgba(126, 226, 213, ${0.16 + t * 0.2})`;
+        ctx.fillRect(x - 1, y - 1, 2, 2);
+    }
 }
 
 function drawTrail(points, count = points.length, weaponId, explosions = []) {
