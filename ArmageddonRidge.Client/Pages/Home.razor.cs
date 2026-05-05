@@ -1,5 +1,6 @@
 using System.Numerics;
 using ArmageddonRidge.Client.Services;
+using ArmageddonRidge.Client.Services.Rendering;
 using ArmageddonRidge.Core;
 using ArmageddonRidge.Core.Content;
 using ArmageddonRidge.Core.Game;
@@ -8,12 +9,14 @@ using ArmageddonRidge.Core.Terrain;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using RenderMode = ArmageddonRidge.Core.Models.RenderMode;
 
 namespace ArmageddonRidge.Client.Pages;
 
 public partial class Home
 {
     private static readonly Difficulty[] DifficultyOptions = Enum.GetValues<Difficulty>();
+    private static readonly RenderMode[] RenderModeOptions = Enum.GetValues<RenderMode>();
 
     private ElementReference _canvas;
     private GameState? _state;
@@ -27,11 +30,19 @@ public partial class Home
     private bool _screenShake = true;
     private bool _reducedMotion;
     private bool _targetingComputerEnabledByDefault = true;
+    private RenderMode _renderMode = RenderMode.Hybrid;
     private float _sfxVolume = 0.9f;
     private int _startingCash = GameConstants.StartingCash;
     private int _fps = 60;
     private double _frameMs = 16.7;
     private double _renderMs;
+    private double _sceneBuildMs;
+    private double _commandBuildMs;
+    private double _submitMs;
+    private int _commandCount;
+    private int _payloadBytes;
+    private bool _simdHardwareAccelerated;
+    private string _rendererModeLabel = "Hybrid";
     private int _bestScore;
     private bool _rendererReady;
     private bool _shotPlaybackInProgress;
@@ -110,6 +121,12 @@ public partial class Home
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
+    private static string RenderModeLabel(RenderMode mode) => mode switch
+    {
+        RenderMode.FullWasm => "Full WASM",
+        _ => "Hybrid (JS + WASM)"
+    };
+
     private string HintText => HasTargetingComputer
         ? "Targeting computer estimates the launch arc. Wind still matters."
         : HasTracerRounds
@@ -137,7 +154,9 @@ public partial class Home
                 _screenShake = save.Settings.ScreenShake;
                 _reducedMotion = save.Settings.ReducedMotion;
                 _targetingComputerEnabledByDefault = save.Settings.TargetingComputerEnabledByDefault;
+                _renderMode = save.Settings.RenderMode;
                 _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
+                Renderer.SetMode(_renderMode);
                 await Audio.SetVolumeAsync(_sfxVolume);
                 StateHasChanged();
             }
@@ -232,7 +251,7 @@ public partial class Home
         }
     }
 
-    private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution, bool shieldHit, bool healthHit)
+    private async Task PlayResolutionAsync(RenderScene preShotScene, ShotResolution resolution, bool shieldHit, bool healthHit)
     {
         _shotPlaybackInProgress = true;
         try
@@ -297,25 +316,37 @@ public partial class Home
         _rendererReady = true;
     }
 
-    private object BuildScene(bool includeTerrain = true)
+    private RenderScene BuildScene(bool includeTerrain = true)
     {
-        if (_state is null) return new { };
-
-        object? terrain = includeTerrain ? _state.Terrain.SolidTop.ToArray() : null;
-        return new
+        if (_state is null)
         {
-            world = new { width = GameConstants.WorldWidth, height = GameConstants.WorldHeight },
+            return new RenderScene(
+                new RenderWorld(GameConstants.WorldWidth, GameConstants.WorldHeight),
+                null,
+                1,
+                new RenderWeather("clear", 0),
+                0,
+                GamePhase.MainMenu.ToString(),
+                WeaponIds.PeaShell,
+                EmptyPreview(),
+                [],
+                new RenderTank("player", 0, 0, 45, 0, 0, false, 0, 0),
+                new RenderTank("cpu", 0, 0, 45, 0, 0, true, 0, 0));
+        }
+
+        var terrain = includeTerrain ? _state.Terrain.SolidTop.ToArray() : null;
+        return new RenderScene(
+            new RenderWorld(GameConstants.WorldWidth, GameConstants.WorldHeight),
             terrain,
-            round = _state.RoundNumber,
-            weather = WeatherDto(_state),
-            wind = _state.Wind,
-            phase = _state.Phase.ToString(),
-            selectedWeapon = _state.SelectedWeaponId,
-            previewTrail = PreviewTrailDto(),
-            radiation = RadiationDto(_state.RadiationZones),
-            player = TankDto(_state.PlayerTank, _state.Terrain),
-            cpu = TankDto(_state.CpuTank, _state.Terrain)
-        };
+            _state.RoundNumber,
+            WeatherDto(_state),
+            _state.Wind,
+            _state.Phase.ToString(),
+            _state.SelectedWeaponId,
+            PreviewTrailDto(),
+            RadiationDto(_state.RadiationZones),
+            TankDto(_state.PlayerTank, _state.Terrain),
+            TankDto(_state.CpuTank, _state.Terrain));
     }
 
     private void ResetRenderCache()
@@ -326,20 +357,19 @@ public partial class Home
 
     private void MarkTerrainChanged() => _terrainRevision++;
 
-    private static object TankDto(Tank tank, TerrainMask terrain) => new
-    {
-        id = tank.Id,
-        x = tank.Position.X,
-        y = tank.Position.Y,
-        angle = tank.TurretAngle,
-        health = TankHealth(tank),
-        shield = MathF.Max(0, tank.Shield),
-        isCpu = tank.IsCpu,
-        terrainY = terrain.GetSurfaceY(tank.Position.X),
-        buriedDepth = MathF.Max(0, tank.Position.Y - terrain.GetSurfaceY(tank.Position.X))
-    };
+    private static RenderTank TankDto(Tank tank, TerrainMask terrain) =>
+        new(
+            tank.Id,
+            tank.Position.X,
+            tank.Position.Y,
+            tank.TurretAngle,
+            TankHealth(tank),
+            MathF.Max(0, tank.Shield),
+            tank.IsCpu,
+            terrain.GetSurfaceY(tank.Position.X),
+            MathF.Max(0, tank.Position.Y - terrain.GetSurfaceY(tank.Position.X)));
 
-    private static object WeatherDto(GameState state)
+    private static RenderWeather WeatherDto(GameState state)
     {
         var index = Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber)) % 4;
         var type = index switch
@@ -350,24 +380,22 @@ public partial class Home
             _ => "clear"
         };
         var intensity = 0.34f + ((Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber, state.Wind)) % 36) / 100f);
-        return new { type, intensity };
+        return new RenderWeather(type, intensity);
     }
 
-    private static object[] RadiationDto(IReadOnlyList<RadiationZone> zones)
+    private static RenderRadiationZone[] RadiationDto(IReadOnlyList<RadiationZone> zones)
     {
-        var radiation = new object[zones.Count];
+        var radiation = new RenderRadiationZone[zones.Count];
         for (var i = 0; i < zones.Count; i++)
         {
             var zone = zones[i];
-            radiation[i] = new
-            {
-                x = zone.Center.X,
-                y = zone.Center.Y,
-                radius = zone.Radius,
-                turns = zone.TurnsRemaining,
-                visualKind = zone.VisualKind.ToString(),
-                lava = zone.VisualKind == ShotVisualKind.Lava || zone.VisualKind == ShotVisualKind.Fire
-            };
+            radiation[i] = new RenderRadiationZone(
+                zone.Center.X,
+                zone.Center.Y,
+                zone.Radius,
+                zone.TurnsRemaining,
+                zone.VisualKind.ToString(),
+                zone.VisualKind == ShotVisualKind.Lava || zone.VisualKind == ShotVisualKind.Fire);
         }
 
         return radiation;
@@ -377,7 +405,7 @@ public partial class Home
 
     private bool HasTargetingComputer => _targetingComputerEnabledByDefault || _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true;
 
-    private object PreviewTrailDto()
+    private RenderPreviewTrail PreviewTrailDto()
     {
         if (_state is null || !HasTargetingComputer) return EmptyPreview();
 
@@ -395,24 +423,24 @@ public partial class Home
             }
         }
 
-        var path = new List<object>(Math.Min(48, apexIndex + 1));
+        var path = new List<RenderPoint>(Math.Min(48, apexIndex + 1));
         var step = Math.Max(1, apexIndex / 42);
         for (var i = 0; i <= apexIndex; i += step)
         {
             var point = trail[i];
-            path.Add(new { x = point.X, y = point.Y });
+            path.Add(RenderPoint.FromVector(point));
         }
 
         var apex = trail[apexIndex];
-        path.Add(new { x = apex.X, y = apex.Y });
+        path.Add(RenderPoint.FromVector(apex));
 
         var remaining = trail.Count - apexIndex - 1;
-        if (remaining <= 0) return new { path = path.ToArray(), cone = Array.Empty<object>() };
+        if (remaining <= 0) return new RenderPreviewTrail(path.ToArray(), []);
 
         var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.325f), 2, 40);
         var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
         var direction = coneCenter - apex;
-        if (direction.LengthSquared() < 0.001f) return new { path = path.ToArray(), cone = Array.Empty<object>() };
+        if (direction.LengthSquared() < 0.001f) return new RenderPreviewTrail(path.ToArray(), []);
 
         direction = Vector2.Normalize(direction);
         var normal = new Vector2(-direction.Y, direction.X);
@@ -422,19 +450,16 @@ public partial class Home
         var left = coneCenter + (normal * (width + jitter));
         var right = coneCenter - (normal * (width - jitter * 0.5f));
 
-        return new
-        {
-            path = path.ToArray(),
-            cone = new object[]
-            {
-                new { x = apex.X, y = apex.Y },
-                new { x = left.X, y = left.Y },
-                new { x = right.X, y = right.Y }
-            }
-        };
+        return new RenderPreviewTrail(
+            path.ToArray(),
+            [
+                RenderPoint.FromVector(apex),
+                RenderPoint.FromVector(left),
+                RenderPoint.FromVector(right)
+            ]);
     }
 
-    private static object EmptyPreview() => new { path = Array.Empty<object>(), cone = Array.Empty<object>() };
+    private static RenderPreviewTrail EmptyPreview() => new([], []);
 
     private static float TinyPreviewNoise(int seed, int round, float angle, int power)
     {
@@ -626,6 +651,18 @@ public partial class Home
         if (_state?.Phase == GamePhase.Battle) await RenderSceneAsync();
     }
 
+    private async Task HandleRenderModeChangedAsync(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<RenderMode>(args.Value?.ToString(), out var mode)) return;
+
+        _renderMode = mode;
+        Renderer.SetMode(_renderMode);
+        _rendererReady = false;
+        _lastSentTerrainRevision = -1;
+        await PersistSaveAsync();
+        if (_state is not null) await RenderSceneCoreAsync(force: true);
+    }
+
     private async Task HandleStartingCashChangedAsync(ChangeEventArgs args)
     {
         if (!int.TryParse(args.Value?.ToString(), out var cash)) return;
@@ -650,7 +687,8 @@ public partial class Home
                 ReducedMotion: _reducedMotion,
                 Difficulty: _difficulty,
                 StartingCash: _startingCash,
-                TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault));
+                TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault,
+                RenderMode: _renderMode));
         await Storage.SetAsync("armageddon-ridge-save", save);
     }
 
@@ -668,6 +706,13 @@ public partial class Home
         _fps = stats.Fps;
         _frameMs = stats.FrameMs;
         _renderMs = stats.RenderMs;
+        _sceneBuildMs = stats.SceneBuildMs;
+        _commandBuildMs = stats.CommandBuildMs;
+        _submitMs = stats.SubmitMs;
+        _commandCount = stats.CommandCount;
+        _payloadBytes = stats.PayloadBytes;
+        _simdHardwareAccelerated = stats.SimdHardwareAccelerated;
+        _rendererModeLabel = stats.Mode;
     }
 
     private void StartPerfLoop()

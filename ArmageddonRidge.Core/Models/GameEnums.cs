@@ -316,3 +316,19 @@ public enum ShotVisualKind
     /// </summary>
     PenetratorSecondary
 }
+
+/// <summary>
+/// Selects the battlefield rendering backend.
+/// </summary>
+public enum RenderMode
+{
+    /// <summary>
+    /// Existing JavaScript canvas renderer fed by Blazor WebAssembly game state.
+    /// </summary>
+    Hybrid,
+
+    /// <summary>
+    /// C# render orchestration and command generation with a minimal JavaScript canvas bridge.
+    /// </summary>
+    FullWasm
+}

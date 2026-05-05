@@ -84,8 +84,14 @@
                     <div class="perf-overlay">
                         <strong>Perf</strong>
                         <span>FPS: @_fps</span>
+                        <span>Mode: @_rendererModeLabel</span>
                         <span>Frame: @_frameMs.ToString("0.00") ms</span>
                         <span>Render: @_renderMs.ToString("0.00") ms</span>
+                        <span>Scene: @_sceneBuildMs.ToString("0.00") ms</span>
+                        <span>Commands: @_commandBuildMs.ToString("0.00") ms</span>
+                        <span>Submit: @_submitMs.ToString("0.00") ms</span>
+                        <span>Batch: @_commandCount / @_payloadBytes bytes</span>
+                        <span>SIMD: @(_simdHardwareAccelerated ? "on" : "off")</span>
                         <span>Sim: @_state.LastPerformance.SimulationMs.ToString("0.00") ms</span>
                         <span>Terrain: @_state.LastPerformance.TerrainMs.ToString("0.00") ms</span>
                         <span>CPU: @_state.LastPerformance.CpuPlanningMs.ToString("0.00") ms</span>
@@ -233,6 +239,15 @@
             <label class="settings-row">
                 <span>Targeting computer</span>
                 <input type="checkbox" checked="@_targetingComputerEnabledByDefault" @onchange="HandleTargetingComputerChangedAsync" />
+            </label>
+            <label class="settings-row">
+                <span>Rendering</span>
+                <select value="@_renderMode" @onchange="HandleRenderModeChangedAsync">
+                    @foreach (var mode in RenderModeOptions)
+                    {
+                        <option value="@mode">@RenderModeLabel(mode)</option>
+                    }
+                </select>
             </label>
             <label class="settings-row range-row">
                 <span>SFX volume</span>

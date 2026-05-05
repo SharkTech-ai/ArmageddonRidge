@@ -46,6 +46,7 @@ public sealed record SaveGame(
 /// <param name="Difficulty">Default CPU difficulty for new duels.</param>
 /// <param name="StartingCash">Default player cash for new runs.</param>
 /// <param name="TargetingComputerEnabledByDefault">Whether the targeting computer is granted without shop purchase.</param>
+/// <param name="RenderMode">Preferred battlefield renderer backend.</param>
 public sealed record GameSettings(
     float MasterVolume = 0.8f,
     float SfxVolume = 0.9f,
@@ -55,4 +56,5 @@ public sealed record GameSettings(
     bool EnableNuclearWeapons = true,
     Difficulty Difficulty = Difficulty.Normal,
     int StartingCash = GameConstants.StartingCash,
-    bool TargetingComputerEnabledByDefault = true);
+    bool TargetingComputerEnabledByDefault = true,
+    RenderMode RenderMode = RenderMode.Hybrid);
