@@ -1209,11 +1209,11 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     const missileProgress = 1 - Math.pow(1 - launchProgress, 2.55);
     const controlX = startX + ((endX - startX) * 0.22);
     const controlY = Math.min(startY, endY, apexY) - 155 - Math.abs(endX - startX) * 0.04;
-    const x = quadraticPoint(startX, controlX, endX, missileProgress);
-    const y = quadraticPoint(startY, controlY, endY, missileProgress);
+    const x = quadraticScalar(startX, controlX, endX, missileProgress);
+    const y = quadraticScalar(startY, controlY, endY, missileProgress);
     const tangentT = Math.min(1, missileProgress + 0.012);
-    const tangentX = quadraticPoint(startX, controlX, endX, tangentT);
-    const tangentY = quadraticPoint(startY, controlY, endY, tangentT);
+    const tangentX = quadraticScalar(startX, controlX, endX, tangentT);
+    const tangentY = quadraticScalar(startY, controlY, endY, tangentT);
     const angle = Math.atan2(tangentY - y, tangentX - x);
     const now = performance.now();
 
@@ -1245,7 +1245,7 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     ctx.restore();
 }
 
-function quadraticPoint(a, b, c, t) {
+function quadraticScalar(a, b, c, t) {
     const inv = 1 - t;
     return (inv * inv * a) + (2 * inv * t * b) + (t * t * c);
 }
@@ -1307,8 +1307,8 @@ function drawPatriotFlightTrail(startX, startY, controlX, controlY, endX, endY, 
         ctx.beginPath();
         for (let i = 0; i <= segments; i++) {
             const t = tailStart + ((missileProgress - tailStart) * (i / segments));
-            const x = quadraticPoint(startX, controlX, endX, t);
-            const y = quadraticPoint(startY, controlY, endY, t);
+            const x = quadraticScalar(startX, controlX, endX, t);
+            const y = quadraticScalar(startY, controlY, endY, t);
             if (i === 0) {
                 ctx.moveTo(x, y);
             } else {
