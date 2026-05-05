@@ -208,7 +208,11 @@ public partial class Home
             var cpuShieldBefore = _state.CpuTank.Shield;
             var playerPreShotScene = BuildScene();
             var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
-            await PlayResolutionAsync(playerPreShotScene, playerShot);
+            await PlayResolutionAsync(
+                playerPreShotScene,
+                playerShot,
+                ShieldChanged(playerShieldBefore, _state.PlayerTank.Shield, cpuShieldBefore, _state.CpuTank.Shield),
+                HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank));
             await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
             RefreshPlayerWeapons();
 
@@ -221,7 +225,11 @@ public partial class Home
                 cpuShieldBefore = _state.CpuTank.Shield;
                 var cpuPreShotScene = BuildScene();
                 var cpuShot = Engine.FireCurrentTurn(_state, _settings);
-                await PlayResolutionAsync(cpuPreShotScene, cpuShot);
+                await PlayResolutionAsync(
+                    cpuPreShotScene,
+                    cpuShot,
+                    ShieldChanged(playerShieldBefore, _state.PlayerTank.Shield, cpuShieldBefore, _state.CpuTank.Shield),
+                    HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank));
                 await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
             }
 
@@ -235,7 +243,7 @@ public partial class Home
         }
     }
 
-    private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution)
+    private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution, bool shieldHit, bool healthHit)
     {
         _shotPlaybackInProgress = true;
         try
@@ -243,7 +251,8 @@ public partial class Home
             var hasNuclear = HasNuclearExplosion(resolution.Explosions);
             await Audio.PlayAsync(hasNuclear ? "nuclear" : "fire");
             await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion);
-            await Audio.PlayAsync(hasNuclear || HasLargeExplosion(resolution.Explosions) ? "largeExplosion" : "smallExplosion");
+            if (shieldHit) await Audio.PlayAsync("shieldHit");
+            if (!shieldHit || healthHit) await Audio.PlayAsync(hasNuclear || HasLargeExplosion(resolution.Explosions) ? "largeExplosion" : "smallExplosion");
         }
         catch (JSException ex)
         {
@@ -457,6 +466,12 @@ public partial class Home
 
     private static string TankShieldWidth(Tank tank) =>
         $"{Math.Clamp(MathF.Max(0, tank.Shield) / 120f, 0, 1) * 100:0}%";
+
+    private static bool ShieldChanged(float playerShieldBefore, float playerShieldAfter, float cpuShieldBefore, float cpuShieldAfter) =>
+        playerShieldAfter < playerShieldBefore || cpuShieldAfter < cpuShieldBefore;
+
+    private static bool HealthChanged(int playerHealthBefore, Tank player, int cpuHealthBefore, Tank cpu) =>
+        TankHealth(player) < Math.Max(0, playerHealthBefore) || TankHealth(cpu) < Math.Max(0, cpuHealthBefore);
 
     private async Task ApplyDamageFeedbackAsync(int playerHealthBefore, int cpuHealthBefore, float playerShieldBefore, float cpuShieldBefore)
     {

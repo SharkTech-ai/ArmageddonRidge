@@ -77,6 +77,82 @@ public sealed class ProjectileSimulatorTests
     }
 
     [Fact]
+    public void ShieldedTankProjectileImpactsBubbleBeforeHull()
+    {
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights);
+        var player = Tank("player", 160, terrain, 0);
+        var cpu = Tank("cpu", 300, terrain, 180);
+        player.Position = new Vector2(160, 620);
+        cpu.Position = new Vector2(300, 620);
+        cpu.Shield = 120;
+        var weapon = new WeaponCatalog().Get(WeaponIds.PeaShell);
+        var simulator = new ProjectileSimulator();
+
+        var result = simulator.Simulate(terrain, player, cpu, weapon, 0, 100, 0, maxSteps: 60);
+
+        Assert.Equal(ProjectileStopReason.ShieldHit, result.StopReason);
+        Assert.InRange(result.ImpactPoint.X, 235, cpu.Position.X - (GameConstants.TankCollisionWidth / 2f));
+    }
+
+    [Fact]
+    public void UnshieldedTankProjectileStillImpactsHull()
+    {
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights);
+        var player = Tank("player", 160, terrain, 0);
+        var cpu = Tank("cpu", 300, terrain, 180);
+        player.Position = new Vector2(160, 620);
+        cpu.Position = new Vector2(300, 620);
+        var weapon = new WeaponCatalog().Get(WeaponIds.PeaShell);
+        var simulator = new ProjectileSimulator();
+
+        var result = simulator.Simulate(terrain, player, cpu, weapon, 0, 100, 0, maxSteps: 60);
+
+        Assert.Equal(ProjectileStopReason.TankHit, result.StopReason);
+        Assert.InRange(result.ImpactPoint.X, cpu.Position.X - (GameConstants.TankCollisionWidth / 2f) - GameConstants.ProjectileCollisionRadius, cpu.Position.X);
+    }
+
+    [Fact]
+    public void ProjectileOutsideShieldEllipseDoesNotHitShield()
+    {
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights);
+        var player = Tank("player", 160, terrain, 0);
+        var cpu = Tank("cpu", 300, terrain, 180);
+        player.Position = new Vector2(160, 500);
+        cpu.Position = new Vector2(300, 620);
+        cpu.Shield = 120;
+        var weapon = new WeaponCatalog().Get(WeaponIds.PeaShell);
+        var simulator = new ProjectileSimulator();
+
+        var result = simulator.Simulate(terrain, player, cpu, weapon, 0, 100, 0, maxSteps: 60);
+
+        Assert.NotEqual(ProjectileStopReason.ShieldHit, result.StopReason);
+        Assert.NotEqual(ProjectileStopReason.TankHit, result.StopReason);
+    }
+
+    [Fact]
+    public void ProjectileDoesNotHitBuriedShieldArea()
+    {
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        for (var x = 220; x <= 360; x++) heights[x] = 600f;
+        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights);
+        var player = Tank("player", 160, terrain, 0);
+        var cpu = Tank("cpu", 300, terrain, 180);
+        player.Position = new Vector2(160, 650);
+        cpu.Position = new Vector2(300, 650);
+        cpu.Shield = 120;
+        var weapon = new WeaponCatalog().Get(WeaponIds.PeaShell);
+        var simulator = new ProjectileSimulator();
+
+        var result = simulator.Simulate(terrain, player, cpu, weapon, 0, 100, 0, maxSteps: 60);
+
+        Assert.NotEqual(ProjectileStopReason.ShieldHit, result.StopReason);
+        Assert.Equal(ProjectileStopReason.TerrainHit, result.StopReason);
+    }
+
+    [Fact]
     public void OwnerCollisionArmsOnlyAfterProjectileClearsLaunchTank()
     {
         var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();

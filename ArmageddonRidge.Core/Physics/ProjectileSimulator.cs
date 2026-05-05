@@ -97,6 +97,9 @@ public sealed class ProjectileSimulator
                 nearestOwnerSquared,
                 SegmentDistanceSquared(px, py, nextX, nextY, ownerCenter.X, ownerCenter.Y));
 
+            if (SweptHitsShield(px, py, nextX, nextY, opponent, terrain, GameConstants.ProjectileCollisionRadius, out var shieldHit))
+                return Finish(trail, captureTrail, shieldHit.X, shieldHit.Y, ProjectileStopReason.ShieldHit, nearestOpponentSquared, nearestOwnerSquared);
+
             if (SweptHitsTank(px, py, nextX, nextY, opponentHitbox, GameConstants.ProjectileCollisionRadius, out var opponentHit))
                 return Finish(trail, captureTrail, opponentHit.X, opponentHit.Y, ProjectileStopReason.TankHit, nearestOpponentSquared, nearestOwnerSquared);
 
@@ -141,6 +144,24 @@ public sealed class ProjectileSimulator
 
     internal static bool SweptHitsTank(Vector2 start, Vector2 end, Tank tank, float padding, out Vector2 hit) =>
         SweptHitsTank(start.X, start.Y, end.X, end.Y, TankHitbox(tank), padding, out hit);
+
+    internal static bool SweptHitsTankOrShield(Vector2 start, Vector2 end, Tank tank, TerrainMask terrain, float padding, out Vector2 hit, out ProjectileStopReason stopReason)
+    {
+        if (SweptHitsShield(start.X, start.Y, end.X, end.Y, tank, terrain, padding, out hit))
+        {
+            stopReason = ProjectileStopReason.ShieldHit;
+            return true;
+        }
+
+        if (SweptHitsTank(start, end, tank, padding, out hit))
+        {
+            stopReason = ProjectileStopReason.TankHit;
+            return true;
+        }
+
+        stopReason = ProjectileStopReason.Expired;
+        return false;
+    }
 
     private static Hitbox TankHitbox(Tank tank)
     {
@@ -190,6 +211,57 @@ public sealed class ProjectileSimulator
         return true;
     }
 
+    private static bool SweptHitsShield(float ax, float ay, float bx, float by, Tank tank, TerrainMask terrain, float padding, out Vector2 hit)
+    {
+        if (tank.Shield <= 0)
+        {
+            hit = default;
+            return false;
+        }
+
+        var centerX = tank.Position.X;
+        var centerY = tank.Position.Y - GameConstants.ShieldCollisionCenterYOffset;
+        var radiusX = GameConstants.ShieldCollisionRadiusX + padding;
+        var radiusY = GameConstants.ShieldCollisionRadiusY + padding;
+        var startX = (ax - centerX) / radiusX;
+        var startY = (ay - centerY) / radiusY;
+        var dx = (bx - ax) / radiusX;
+        var dy = (by - ay) / radiusY;
+        var a = (dx * dx) + (dy * dy);
+        var b = 2f * ((startX * dx) + (startY * dy));
+        var c = (startX * startX) + (startY * startY) - 1f;
+
+        if (a <= 0.0001f)
+        {
+            hit = default;
+            return false;
+        }
+
+        var discriminant = (b * b) - (4f * a * c);
+        if (discriminant < 0)
+        {
+            hit = default;
+            return false;
+        }
+
+        var root = MathF.Sqrt(discriminant);
+        var inv = 1f / (2f * a);
+        var t1 = (-b - root) * inv;
+        var t2 = (-b + root) * inv;
+        var t = float.MaxValue;
+        if (t1 >= 0f && t1 <= 1f) t = t1;
+        else if (t2 >= 0f && t2 <= 1f) t = t2;
+
+        if (t == float.MaxValue)
+        {
+            hit = default;
+            return false;
+        }
+
+        hit = new Vector2(ax + ((bx - ax) * t), ay + ((by - ay) * t));
+        return hit.Y < terrain.GetSurfaceY(hit.X);
+    }
+
     private static bool ClipAxis(float origin, float delta, float min, float max, ref float tMin, ref float tMax)
     {
         const float Epsilon = 0.0001f;
@@ -229,6 +301,7 @@ internal readonly record struct Hitbox(float Left, float Right, float Top, float
 public enum ProjectileStopReason
 {
     TerrainHit,
+    ShieldHit,
     TankHit,
     OwnerHit,
     OutOfBounds,

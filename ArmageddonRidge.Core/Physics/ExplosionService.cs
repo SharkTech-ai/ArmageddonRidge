@@ -1,4 +1,5 @@
 using System.Numerics;
+using ArmageddonRidge.Core;
 using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Physics;
@@ -81,11 +82,13 @@ public sealed class ExplosionService
     {
         if (weapon.MaxDamage <= 0 || weapon.BlastRadius <= 0) return 0;
 
+        var distance = tank.Shield > 0
+            ? DistanceToShieldEnvelope(tank, center)
+            : Vector2.Distance(tank.Center, center);
+        var distanceSquared = distance * distance;
         var radiusSquared = weapon.BlastRadius * weapon.BlastRadius;
-        var distanceSquared = Vector2.DistanceSquared(tank.Center, center);
         if (distanceSquared >= radiusSquared) return 0;
 
-        var distance = MathF.Sqrt(distanceSquared);
         var normalized = Math.Clamp(1f - (distance / weapon.BlastRadius), 0f, 1f);
         var damage = weapon.MaxDamage * MathF.Pow(normalized, weapon.Falloff);
         if (damage <= 0.01f) return 0;
@@ -97,6 +100,24 @@ public sealed class ExplosionService
         var healthDamage = bypass + (blockable - absorbed);
         tank.Health -= (int)MathF.Ceiling(healthDamage);
         return damage;
+    }
+
+    private static float DistanceToShieldEnvelope(Tank tank, Vector2 point)
+    {
+        var center = new Vector2(tank.Position.X, tank.Position.Y - GameConstants.ShieldCollisionCenterYOffset);
+        var dx = point.X - center.X;
+        var dy = point.Y - center.Y;
+        var normalized = MathF.Sqrt(
+            (dx * dx) / (GameConstants.ShieldCollisionRadiusX * GameConstants.ShieldCollisionRadiusX)
+            + (dy * dy) / (GameConstants.ShieldCollisionRadiusY * GameConstants.ShieldCollisionRadiusY));
+        if (normalized <= 1f) return 0;
+
+        var directionLength = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (directionLength <= 0.001f) return 0;
+
+        var boundaryScale = 1f / normalized;
+        var boundary = new Vector2(center.X + (dx * boundaryScale), center.Y + (dy * boundaryScale));
+        return Vector2.Distance(point, boundary);
     }
 
     private static ShotVisualKind VisualKindFor(WeaponDefinition weapon) => weapon.BehaviorType switch

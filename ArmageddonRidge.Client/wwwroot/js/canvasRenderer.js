@@ -696,12 +696,12 @@ function drawTank(tank, frameName, hurt = false, shieldHit = false, now = perfor
 
     drawTankSprite(tank, frameName);
 
-    if (Number(tank.buriedDepth ?? 0) > 4) {
-        drawBurialCover(tank);
-    }
-
     if (tank.shield > 0 || shieldHit) {
         drawTankShield(tank, shieldHit, now);
+    }
+
+    if (Number(tank.buriedDepth ?? 0) > 4) {
+        drawBurialCover(tank);
     }
 
     if (hurt) {
@@ -714,33 +714,71 @@ function drawTank(tank, frameName, hurt = false, shieldHit = false, now = perfor
 }
 
 function drawTankShield(tank, shieldHit, now) {
-    const pulse = 0.5 + Math.sin(now * 0.008) * 0.16;
-    ctx.save();
-    ctx.globalAlpha = shieldHit ? Math.min(0.95, pulse + 0.28) : pulse;
-    drawSprite("shield", tank.x - 34, tank.y - 50, 68, 58);
-    ctx.restore();
+    const shield = Math.max(0, Number(tank.shield ?? 0));
+    const strength = clamp01(shield / 120);
+    const bubbleAlpha = shieldHit ? 0.86 : 0.22 + strength * 0.34;
+    const pulse = 0.5 + Math.sin(now * 0.008) * 0.5;
+    const centerX = Number(tank.x ?? 0);
+    const centerY = Number(tank.y ?? 0) - 30;
+    const radiusX = 52;
+    const radiusY = 42;
+    const surfaceY = Number(tank.terrainY ?? tank.y);
+    const top = centerY - radiusY - 16;
+    const clipHeight = Math.max(0, surfaceY - top);
+    if (clipHeight <= 0) return;
 
-    if (!shieldHit) {
-        return;
-    }
-
-    const hitPulse = 0.5 + Math.sin(now * 0.022) * 0.5;
     ctx.save();
-    ctx.lineCap = "round";
-    ctx.strokeStyle = `rgba(132, 222, 255, ${0.58 + hitPulse * 0.28})`;
-    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.ellipse(tank.x, tank.y - 28, 44 + hitPulse * 10, 36 + hitPulse * 7, 0, 0, Math.PI * 2);
+    ctx.rect(centerX - radiusX - 20, top, (radiusX + 20) * 2, clipHeight);
+    ctx.clip();
+
+    const glow = ctx.createRadialGradient(centerX, centerY, radiusX * 0.38, centerX, centerY, radiusX + 18);
+    glow.addColorStop(0, "rgba(121, 214, 255, 0)");
+    glow.addColorStop(0.68, `rgba(121, 214, 255, ${0.04 + strength * 0.06})`);
+    glow.addColorStop(1, `rgba(121, 214, 255, ${0.14 + strength * 0.16})`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, radiusX + 7, radiusY + 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(121, 214, 255, 0.65)";
+    ctx.shadowBlur = 10 + strength * 12 + (shieldHit ? 10 : 0);
+    ctx.strokeStyle = `rgba(136, 226, 255, ${bubbleAlpha})`;
+    ctx.lineWidth = 1.5 + strength * 6.5;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.38 + hitPulse * 0.26})`;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
-        const angle = (Math.PI * 0.5 * i) + now * 0.006;
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.25 + strength * 0.28})`;
+    ctx.lineWidth = 1 + strength * 1.5;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, radiusX - 5, radiusY - 4, 0, Math.PI * 1.08, Math.PI * 1.78);
+    ctx.stroke();
+
+    if (shieldHit) {
+        const ripple = 0.5 + pulse * 0.5;
+        ctx.strokeStyle = `rgba(224, 250, 255, ${0.68 * (1 - ripple * 0.28)})`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 7]);
         ctx.beginPath();
-        ctx.moveTo(tank.x + Math.cos(angle) * 32, tank.y - 28 + Math.sin(angle) * 25);
-        ctx.lineTo(tank.x + Math.cos(angle) * 54, tank.y - 28 + Math.sin(angle) * 42);
+        ctx.ellipse(centerX, centerY, radiusX + 7 + ripple * 12, radiusY + 5 + ripple * 9, 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 + pulse * 0.28})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const angle = (Math.PI * 0.5 * i) + now * 0.006;
+            ctx.beginPath();
+            ctx.moveTo(centerX + Math.cos(angle) * (radiusX - 12), centerY + Math.sin(angle) * (radiusY - 10));
+            ctx.lineTo(centerX + Math.cos(angle) * (radiusX + 16), centerY + Math.sin(angle) * (radiusY + 12));
+            ctx.stroke();
+        }
     }
+
     ctx.restore();
 }
 

@@ -51,6 +51,21 @@ public static class GameConstants
     public const float ProjectileCollisionRadius = 5f;
 
     /// <summary>
+    /// Horizontal radius for the visible shield bubble collision envelope.
+    /// </summary>
+    public const float ShieldCollisionRadiusX = 52f;
+
+    /// <summary>
+    /// Vertical radius for the visible shield bubble collision envelope.
+    /// </summary>
+    public const float ShieldCollisionRadiusY = 42f;
+
+    /// <summary>
+    /// Vertical offset from tank foot position to the center of the shield bubble.
+    /// </summary>
+    public const float ShieldCollisionCenterYOffset = 30f;
+
+    /// <summary>
     /// Fixed simulation timestep in seconds.
     /// </summary>
     public const float FixedDeltaTime = 1f / 60f;

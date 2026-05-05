@@ -95,6 +95,11 @@ const recipes = {
         setTimeout(() => recipes.largeExplosion(), 180);
     },
     shield: () => tone(880, 0.16, "triangle", 0.07, -260),
+    shieldHit: () => {
+        tone(1180, 0.09, "triangle", 0.08, 320);
+        setTimeout(() => tone(760, 0.11, "sine", 0.05, -260), 36);
+        noise(0.055, 0.035);
+    },
     dirt: () => noise(0.18, 0.08),
     damage: () => tone(180, 0.12, "square", 0.07, -60),
     win: () => {

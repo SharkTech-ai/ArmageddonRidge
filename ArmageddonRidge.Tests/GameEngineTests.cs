@@ -221,6 +221,25 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void ProjectileDetonatingOnShieldBoundaryConsumesShield()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        state.Terrain.CopyFrom(new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights));
+        state.PlayerTank.Position = new Vector2(160, 620);
+        state.CpuTank.Position = new Vector2(300, 620);
+        state.CpuTank.Shield = 120;
+        state.Wind = 0;
+        engine.StartBattle(state);
+
+        engine.FireCurrentTurn(state, settings, angle: 0, power: 100);
+
+        Assert.True(state.CpuTank.Shield < 120);
+    }
+
+    [Fact]
     public void MassiveOrdnancePenetratorProducesStagedPrimaryAndSecondaryExplosions()
     {
         var engine = CreateEngine();

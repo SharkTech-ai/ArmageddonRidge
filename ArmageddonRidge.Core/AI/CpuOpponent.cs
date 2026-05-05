@@ -63,7 +63,7 @@ public sealed class CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simul
                     var score = (enemyPotential * 10f)
                         - (selfRisk * profile.SelfDamagePenalty)
                         - (weapon.Cost * profile.CostPenalty)
-                        + (simulation.StopReason == ProjectileStopReason.TankHit ? 400 : 0);
+                        + (simulation.StopReason is ProjectileStopReason.TankHit or ProjectileStopReason.ShieldHit ? 400 : 0);
 
                     if (weapon.BehaviorType == WeaponBehaviorType.DroneSwarm)
                         score += 60;

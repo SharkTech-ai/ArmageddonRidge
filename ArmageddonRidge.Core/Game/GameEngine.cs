@@ -385,10 +385,10 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             previous = point;
         }
 
-        if (ProjectileSimulator.SweptHitsTank(origin, target, opponent, BeamPadding, out _))
+        if (ProjectileSimulator.SweptHitsTankOrShield(origin, target, opponent, terrain, BeamPadding, out var laserHit, out _))
         {
-            trail[^1] = target;
-            return new WeaponSimulation(trail, target, [LaserExplosion(target, weapon)]);
+            trail[^1] = laserHit;
+            return new WeaponSimulation(trail, laserHit, [LaserExplosion(laserHit, weapon)]);
         }
 
         return new WeaponSimulation(trail, trail[^1], []);
