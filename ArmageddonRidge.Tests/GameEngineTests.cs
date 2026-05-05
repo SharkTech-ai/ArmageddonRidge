@@ -163,5 +163,26 @@ public sealed class GameEngineTests
         Assert.True(secondary.TerrainRadius > primary.TerrainRadius);
     }
 
+    [Fact]
+    public void DarkEagleGuidesDirectlyToOpponent()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.DarkEagle, 1);
+        state.SelectedWeaponId = WeaponIds.DarkEagle;
+        engine.StartBattle(state);
+        var targetBeforeShot = state.CpuTank.Center;
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 8, power: 1);
+
+        Assert.Equal(WeaponIds.DarkEagle, result.WeaponId);
+        Assert.NotEmpty(result.Trail);
+        Assert.Equal(ShotVisualKind.Missile, Assert.Single(result.Explosions).VisualKind);
+        Assert.True(result.Trail.Min(static point => point.Y) < targetBeforeShot.Y - 100);
+        Assert.True(Vector2.Distance(result.Explosions[0].Center, targetBeforeShot) < 0.01f);
+        Assert.True(state.CpuTank.Health < state.CpuTank.MaxHealth);
+    }
+
     private static GameEngine CreateEngine() => new(new WeaponCatalog(), new UpgradeCatalog());
 }

@@ -6,7 +6,7 @@ var repoRoot = FindRepoRoot();
 var spriteRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites");
 var iconRoot = Path.Combine(spriteRoot, "icons");
 var sourceSheet = Path.Combine(repoRoot, "tools", "ArmageddonRidge.AssetPipeline", "assets", "generated-tank-sheet.png");
-const string AssetVersion = "2026-05-04-genesis-v6";
+const string AssetVersion = "2026-05-04-genesis-v7";
 Directory.CreateDirectory(spriteRoot);
 Directory.CreateDirectory(iconRoot);
 
@@ -187,6 +187,22 @@ static void DrawDrone(Bitmap32 bmp)
     bmp.FillPolygon(new[] { (11, 24), (16, 22), (11, 20) }, new Color32(221, 104, 83));
 }
 
+static void DrawDarkEagleIcon(Bitmap32 bmp)
+{
+    var outline = new Color32(14, 18, 24);
+    var body = new Color32(210, 222, 215);
+    bmp.FillEllipse(9, 21, 7, 4, new Color32(255, 154, 46, 220));
+    bmp.FillEllipse(5, 21, 5, 3, new Color32(236, 82, 76, 180));
+    bmp.FillPolygon(new[] { (8, 20), (17, 14), (31, 14), (38, 20), (31, 26), (17, 26) }, outline);
+    bmp.FillPolygon(new[] { (12, 20), (18, 16), (30, 16), (35, 20), (30, 24), (18, 24) }, body);
+    bmp.FillPolygon(new[] { (30, 16), (38, 20), (30, 24) }, new Color32(58, 68, 78));
+    bmp.FillRect(18, 17, 11, 2, body.Lighten(38));
+    bmp.FillRect(18, 22, 10, 2, new Color32(87, 98, 107));
+    bmp.FillPolygon(new[] { (16, 24), (24, 24), (19, 32) }, new Color32(72, 83, 92));
+    bmp.FillPolygon(new[] { (16, 16), (24, 16), (19, 8) }, new Color32(72, 83, 92));
+    bmp.FillRect(23, 18, 3, 5, new Color32(80, 197, 183));
+}
+
 static void DrawDroneSprite(Bitmap32 bmp)
 {
     var outline = new Color32(13, 16, 17);
@@ -269,7 +285,7 @@ static void DrawIcon(Bitmap32 bmp, string id)
 
     if (id.Contains("dark-eagle", StringComparison.OrdinalIgnoreCase))
     {
-        DrawMissile(bmp, new Color32(210, 222, 215), new Color32(64, 74, 83), plume: true);
+        DrawDarkEagleIcon(bmp);
         return;
     }
 

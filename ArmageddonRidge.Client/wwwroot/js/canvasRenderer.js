@@ -11,7 +11,7 @@ let lastScene;
 let cachedTerrain;
 let rafId = 0;
 let shotInProgress = false;
-const spriteManifestVersion = "2026-05-04-genesis-v6";
+const spriteManifestVersion = "2026-05-04-genesis-v7";
 const cloudBands = [
     { x: 90, y: 64, scale: 1.08, speed: 7 },
     { x: 360, y: 104, scale: 0.84, speed: 11 },
@@ -61,8 +61,14 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
     const stagedExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) >= 0);
     const finalExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) < 0);
     const stagedStarts = new Map();
-    const dramaticFlight = isDroneWeapon(weaponId) || isMopWeapon(weaponId);
-    const duration = Math.min(dramaticFlight ? 1600 : 1200, Math.max(dramaticFlight ? 620 : 260, points.length * (dramaticFlight ? 5.5 : 4)));
+    const droneFlight = isDroneWeapon(weaponId);
+    const darkEagleFlight = isDarkEagleWeapon(weaponId);
+    const dramaticFlight = droneFlight || isMopWeapon(weaponId);
+    const duration = darkEagleFlight
+        ? 2300
+        : droneFlight
+        ? Math.min(3400, Math.max(1500, points.length * 13))
+        : Math.min(dramaticFlight ? 1600 : 1200, Math.max(dramaticFlight ? 620 : 260, points.length * (dramaticFlight ? 5.5 : 4)));
     const started = performance.now();
 
     return new Promise(resolve => {
@@ -83,7 +89,8 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
 
         const tick = now => {
             const t = Math.min(1, (now - started) / duration);
-            const count = Math.max(1, Math.floor(points.length * t));
+            const pathProgress = darkEagleFlight ? darkEagleFlightProgress(t) : t;
+            const count = Math.max(1, Math.floor(points.length * pathProgress));
             const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
             drawScene(shotScene, shake, -shake * 0.4);
             drawTrail(points, count, weaponId);
@@ -642,7 +649,7 @@ function drawDroneSwarmTrail(points, count, weaponId) {
         ctx.fillStyle = drone % 2 === 0 ? "rgba(255, 231, 139, 0.7)" : "rgba(126, 226, 213, 0.62)";
 
         for (let i = startIndex; i <= headIndex; i += 6) {
-            const point = dronePoint(points[i], i, drone, phase);
+            const point = dronePoint(points, i, drone, phase);
             const age = (headIndex - i) / Math.max(1, headIndex - startIndex);
             const alpha = Math.max(0.12, 0.52 * (1 - age));
             ctx.fillStyle = `rgba(255, 231, 139, ${alpha})`;
@@ -651,20 +658,32 @@ function drawDroneSwarmTrail(points, count, weaponId) {
             ctx.fill();
         }
 
-        const head = dronePoint(points[headIndex], headIndex, drone, phase);
+        const head = dronePoint(points, headIndex, drone, phase);
         const tailIndex = Math.max(0, headIndex - 5);
-        const tail = dronePoint(points[tailIndex], tailIndex, drone, phase);
-        const angle = Math.atan2(head.y - tail.y, head.x - tail.x);
+        const tail = dronePoint(points, tailIndex, drone, phase);
+        const angle = Math.atan2(head.y - tail.y, head.x - tail.x) + Math.sin((headIndex * 0.24) + phase) * 0.42;
         drawShahedDrone(head.x, head.y, angle, weaponId, 1 + (drone % 3) * 0.06);
     }
 }
 
-function dronePoint(point, index, drone, phase) {
+function dronePoint(points, index, drone, phase) {
+    const point = points[index];
+    const prev = points[Math.max(0, index - 3)] ?? point;
+    const next = points[Math.min(points.length - 1, index + 3)] ?? point;
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const tangentX = dx / length;
+    const tangentY = dy / length;
+    const normalX = -tangentY;
+    const normalY = tangentX;
     const lane = drone - 2;
-    const wobble = 6 + (drone % 3) * 3;
+    const swirl = Math.sin((index * 0.34) + phase) * (9 + (drone % 3) * 2.5);
+    const corkscrew = Math.cos((index * 0.27) + phase) * 5;
+    const offset = (lane * 9) + swirl;
     return {
-        x: point.x + (lane * 7) + Math.sin((index * 0.18) + phase) * wobble,
-        y: point.y + Math.cos((index * 0.23) + phase) * wobble * 0.62 + Math.sin((index * 0.07) + phase) * 4
+        x: point.x + (normalX * offset) + (tangentX * corkscrew),
+        y: point.y + (normalY * offset) + (tangentY * corkscrew)
     };
 }
 
@@ -965,6 +984,18 @@ function isMissileWeapon(weaponId) {
 function isDroneWeapon(weaponId) {
     const id = String(weaponId ?? "").toLowerCase();
     return id.includes("shahed") || id.includes("drone");
+}
+
+function isDarkEagleWeapon(weaponId) {
+    return String(weaponId ?? "").toLowerCase().includes("dark-eagle");
+}
+
+function darkEagleFlightProgress(t) {
+    if (t < 0.72) {
+        return Math.pow(t / 0.72, 0.84) * 0.5;
+    }
+
+    return 0.5 + (Math.pow((t - 0.72) / 0.28, 1.65) * 0.5);
 }
 
 function isMopWeapon(weaponId) {

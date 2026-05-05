@@ -242,6 +242,11 @@ public sealed class GameEngine
             return new WeaponSimulation(trail, trail[^1], []);
         }
 
+        if (weapon.Id == WeaponIds.DarkEagle)
+        {
+            return SimulateGuidedDarkEagle(owner, opponent, weapon);
+        }
+
         var primary = _projectileSimulator.Simulate(state.Terrain, owner, opponent, weapon, angle, power, state.Wind);
         if (weapon.BehaviorType == WeaponBehaviorType.MultiStagePenetrator)
         {
@@ -265,6 +270,37 @@ public sealed class GameEngine
         }
 
         return new WeaponSimulation(primary.Trail, primary.ImpactPoint, explosions);
+    }
+
+    private static WeaponSimulation SimulateGuidedDarkEagle(Tank owner, Tank opponent, WeaponDefinition weapon)
+    {
+        var origin = owner.Center;
+        var target = opponent.Center;
+        var distance = Vector2.Distance(origin, target);
+        var apexY = Math.Clamp(Math.Min(origin.Y, target.Y) - Math.Clamp(distance * 0.22f, 130f, 230f), 48f, GameConstants.WorldHeight - 1);
+        var apexX = origin.X + ((target.X - origin.X) * 0.44f);
+        var apex = new Vector2(apexX, apexY);
+        var ascentSteps = Math.Clamp((int)(distance / 24f), 24, 48);
+        var diveSteps = Math.Clamp((int)(distance / 18f), 30, 62);
+        var trail = new List<Vector2>(ascentSteps + diveSteps + 1);
+
+        for (var i = 0; i <= ascentSteps; i++)
+        {
+            var t = i / (float)ascentSteps;
+            var ignitionWobble = new Vector2(0, MathF.Sin(t * MathF.PI * 3f) * 4f * (1f - t));
+            trail.Add(ClampToWorld(Vector2.Lerp(origin, apex, t) + ignitionWobble));
+        }
+
+        for (var i = 1; i <= diveSteps; i++)
+        {
+            var t = i / (float)diveSteps;
+            trail.Add(ClampToWorld(Vector2.Lerp(apex, target, t)));
+        }
+
+        return new WeaponSimulation(
+            trail,
+            target,
+            [new ExplosionResult(target, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Missile)]);
     }
 
     private static WeaponSimulation SimulateMultiStagePenetrator(ProjectileSimulation primary, Tank owner, WeaponDefinition weapon)

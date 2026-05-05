@@ -26,6 +26,21 @@ public sealed class CpuOpponent
 
         foreach (var weapon in candidates)
         {
+            if (weapon.Id == WeaponIds.DarkEagle)
+            {
+                var guidedScore = (weapon.MaxDamage * 12f)
+                    - (weapon.Cost * profile.CostPenalty)
+                    + 450f
+                    + (DeterministicNoise(state, weapon.Id, 0, 100, 0) * profile.Noise);
+
+                if (guidedScore > best.Score)
+                {
+                    best = new CpuShotPlan(weapon.Id, AngleToward(state.CpuTank, state.PlayerTank), 100, TauntFor(state.CpuTank, weapon), guidedScore, watch.Elapsed.TotalMilliseconds);
+                }
+
+                continue;
+            }
+
             var angleStart = 92;
             var angleEnd = 176;
             var angleStep = profile.AngleStep;
@@ -95,6 +110,13 @@ public sealed class CpuOpponent
     {
         var hash = HashCode.Combine(state.RandomSeed, state.RoundNumber, state.ShotsFired, weaponId, angle, power, salt);
         return (hash & 0x7fffffff) / (float)int.MaxValue;
+    }
+
+    private static float AngleToward(Tank owner, Tank target)
+    {
+        var delta = target.Center - owner.Center;
+        var angle = MathF.Atan2(-delta.Y, delta.X) * 180f / MathF.PI;
+        return Math.Clamp(angle, 5f, 175f);
     }
 
     private static string TauntFor(Tank cpu, WeaponDefinition weapon)
