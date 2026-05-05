@@ -12,7 +12,8 @@ public sealed record ExplosionResult(
     float CpuDamage,
     bool DirtAdded,
     bool Nuclear,
-    IReadOnlyList<RadiationZone> RadiationZones);
+    IReadOnlyList<RadiationZone> RadiationZones,
+    ShotVisualKind VisualKind = ShotVisualKind.Ballistic);
 
 public sealed record ShotResolution(
     string WeaponId,
@@ -22,7 +23,10 @@ public sealed record ShotResolution(
     IReadOnlyList<string> Events,
     bool RoundEnded,
     TurnOwner? Winner,
-    PerformanceSample Performance);
+    PerformanceSample Performance,
+    ShotVisualKind VisualKind = ShotVisualKind.Ballistic,
+    bool Intercepted = false,
+    Vector2? InterceptPoint = null);
 
 public sealed record PerformanceSample(
     double SimulationMs,

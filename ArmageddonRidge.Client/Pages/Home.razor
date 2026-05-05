@@ -43,9 +43,44 @@
     }
     else
     {
-        <div class="battle-layout">
-            <section class="battlefield-panel">
+        <div class="battle-layout @(_state.Phase == GamePhase.Battle ? "is-battle" : "")">
+            <section class="battlefield-panel @(_playerHurt ? "player-hurt" : "") @(_cpuHurt ? "cpu-hurt" : "")">
                 <canvas @ref="_canvas" class="battlefield" width="1200" height="700" aria-label="Armageddon Ridge battlefield"></canvas>
+                @if (_state.Phase == GamePhase.Battle)
+                {
+                    <div class="battle-hud @(AnyTankHurt ? "hurt-flash" : "")" aria-label="Battle health">
+                        <div class="versus-health player @(_playerHurt ? "is-hurt" : "")">
+                            <div class="fighter-label">
+                                <span>Player</span>
+                                <strong>@_state.PlayerTank.Health HP</strong>
+                            </div>
+                            <div class="fighter-bar health">
+                                <span style="width:@TankHealthWidth(_state.PlayerTank)"></span>
+                            </div>
+                            <div class="fighter-bar shield">
+                                <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
+                            </div>
+                        </div>
+
+                        <div class="round-chip">
+                            <span>Round @_state.RoundNumber</span>
+                            <strong>@_state.Phase</strong>
+                        </div>
+
+                        <div class="versus-health cpu @(_cpuHurt ? "is-hurt" : "")">
+                            <div class="fighter-label">
+                                <span>@_state.CpuTank.Name</span>
+                                <strong>@_state.CpuTank.Health HP</strong>
+                            </div>
+                            <div class="fighter-bar health">
+                                <span style="width:@TankHealthWidth(_state.CpuTank)"></span>
+                            </div>
+                            <div class="fighter-bar shield">
+                                <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
+                            </div>
+                        </div>
+                    </div>
+                }
                 @if (!string.IsNullOrWhiteSpace(_taunt))
                 {
                     <div class="taunt">@_taunt</div>
@@ -76,7 +111,7 @@
 
                 <div class="tank-bars">
                     <TankReadout Label="Player" Tank="_state.PlayerTank" />
-                    <TankReadout Label="CPU" Tank="_state.CpuTank" />
+                    <TankReadout Label="@_state.CpuTank.Name" Tank="_state.CpuTank" />
                 </div>
 
                 <div class="wind-card">
@@ -179,6 +214,11 @@
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
     private CancellationTokenSource? _perfLoop;
+    private bool _playerHurt;
+    private bool _cpuHurt;
+    private int _damagePulse;
+
+    private bool AnyTankHurt => _playerHurt || _cpuHurt;
 
     private string WindText => _state is null
         ? "0"
@@ -261,15 +301,21 @@
 
         _canFire = false;
         await Audio.UnlockAsync();
+        var playerHealthBefore = _state.PlayerTank.Health;
+        var cpuHealthBefore = _state.CpuTank.Health;
         var playerPreShotScene = BuildScene();
         var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
+        await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
         await PlayResolutionAsync(playerPreShotScene, playerShot);
 
         if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
         {
             await Task.Delay(_reducedMotion ? 250 : 700);
+            playerHealthBefore = _state.PlayerTank.Health;
+            cpuHealthBefore = _state.CpuTank.Health;
             var cpuPreShotScene = BuildScene();
             var cpuShot = Engine.FireCurrentTurn(_state, _settings);
+            await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
             _taunt = cpuShot.Events.FirstOrDefault(static e => e.Contains("Wind", StringComparison.OrdinalIgnoreCase)
                 || e.Contains("Calculating", StringComparison.OrdinalIgnoreCase)
                 || e.Contains("warhead", StringComparison.OrdinalIgnoreCase)
@@ -293,7 +339,7 @@
         try
         {
             await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear) ? "nuclear" : "fire");
-            await Renderer.PlayShotAsync(preShotScene, resolution.Trail, resolution.Explosions, _screenShake && !_reducedMotion);
+            await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion);
             await Audio.PlayAsync(resolution.Explosions.Any(static e => e.Nuclear || e.DamageRadius > 80) ? "largeExplosion" : "smallExplosion");
         }
         finally
@@ -368,6 +414,8 @@
         {
             world = new { width = GameConstants.WorldWidth, height = GameConstants.WorldHeight },
             terrain,
+            round = _state.RoundNumber,
+            weather = WeatherDto(_state),
             wind = _state.Wind,
             phase = _state.Phase.ToString(),
             selectedWeapon = _state.SelectedWeaponId,
@@ -396,10 +444,63 @@
         isCpu = tank.IsCpu
     };
 
+    private static object WeatherDto(GameState state)
+    {
+        var index = Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber)) % 4;
+        var type = index switch
+        {
+            1 => "rain",
+            2 => "snow",
+            3 => "storm",
+            _ => "clear"
+        };
+        var intensity = 0.34f + ((Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber, state.Wind)) % 36) / 100f);
+        return new { type, intensity };
+    }
+
     private string InventoryLabel(string weaponId)
     {
         var count = _state?.PlayerTank.GetInventoryCount(weaponId) ?? 0;
         return weaponId == WeaponIds.PeaShell || count < 0 ? "inf" : count.ToString();
+    }
+
+    private static string TankHealthWidth(Tank tank) =>
+        $"{Math.Clamp(tank.Health / (float)Math.Max(tank.MaxHealth, 1), 0, 1) * 100:0}%";
+
+    private static string TankShieldWidth(Tank tank) =>
+        $"{Math.Clamp(tank.Shield / 120f, 0, 1) * 100:0}%";
+
+    private async Task ApplyDamageFeedbackAsync(int playerHealthBefore, int cpuHealthBefore)
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        _playerHurt = _state.PlayerTank.Health < playerHealthBefore;
+        _cpuHurt = _state.CpuTank.Health < cpuHealthBefore;
+
+        if (!AnyTankHurt)
+        {
+            return;
+        }
+
+        var pulse = ++_damagePulse;
+        await InvokeAsync(StateHasChanged);
+        _ = ClearDamageFeedbackAsync(pulse);
+    }
+
+    private async Task ClearDamageFeedbackAsync(int pulse)
+    {
+        await Task.Delay(_reducedMotion ? 180 : 640);
+        if (pulse != _damagePulse)
+        {
+            return;
+        }
+
+        _playerHurt = false;
+        _cpuHurt = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs args)

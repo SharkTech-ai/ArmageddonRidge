@@ -31,7 +31,8 @@ public sealed class ExplosionService
             owner.IsCpu ? ownerDamage : opponentDamage,
             weapon.BehaviorType == WeaponBehaviorType.Dirt,
             weapon.Category == WeaponCategory.Nuclear,
-            newZones);
+            newZones,
+            VisualKindFor(weapon));
     }
 
     public float ApplyRadiation(Tank tank, List<RadiationZone> zones)
@@ -96,4 +97,17 @@ public sealed class ExplosionService
         tank.Health -= (int)MathF.Ceiling(healthDamage);
         return damage;
     }
+
+    private static ShotVisualKind VisualKindFor(WeaponDefinition weapon) => weapon.BehaviorType switch
+    {
+        WeaponBehaviorType.Napalm => ShotVisualKind.Fire,
+        WeaponBehaviorType.Nuclear => ShotVisualKind.Nuclear,
+        WeaponBehaviorType.Missile => ShotVisualKind.Missile,
+        WeaponBehaviorType.DroneSwarm => ShotVisualKind.DroneSwarm,
+        WeaponBehaviorType.Laser => ShotVisualKind.Laser,
+        WeaponBehaviorType.Teleport => ShotVisualKind.Teleport,
+        WeaponBehaviorType.Dirt => ShotVisualKind.Dirt,
+        WeaponBehaviorType.Excavator => ShotVisualKind.Dirt,
+        _ => ShotVisualKind.Ballistic
+    };
 }

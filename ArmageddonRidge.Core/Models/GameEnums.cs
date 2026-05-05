@@ -46,7 +46,9 @@ public enum WeaponBehaviorType
     Laser,
     Teleport,
     Nuclear,
-    Napalm
+    Napalm,
+    Missile,
+    DroneSwarm
 }
 
 public enum UpgradeType
@@ -60,5 +62,20 @@ public enum UpgradeType
     Teleporter,
     WindMeter,
     TracerRounds,
-    TargetingComputer
+    TargetingComputer,
+    PatriotBattery
+}
+
+public enum ShotVisualKind
+{
+    Ballistic,
+    Fire,
+    Lava,
+    Missile,
+    Nuclear,
+    DroneSwarm,
+    Laser,
+    Teleport,
+    Dirt,
+    PatriotIntercept
 }

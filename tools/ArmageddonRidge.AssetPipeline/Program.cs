@@ -51,8 +51,9 @@ var iconIds = new[]
 {
     "heavy-shell", "baby-missile", "cluster-popper", "splitter-mirv", "napalm-flask", "dirt-drop",
     "excavator", "bunker-buster", "laser-lance", "teleport-shot", "tactical-nuke", "doomsday-nuke",
+    "dark-eagle", "shahed-drone-swarm",
     "lightshield", "heavyshield", "reflectorshield", "parachute", "repairkit", "battery", "teleporter",
-    "windmeter", "tracerrounds", "targetingcomputer"
+    "windmeter", "tracerrounds", "targetingcomputer", "patriotbattery", "patriot-battery"
 };
 
 foreach (var id in iconIds)
@@ -148,6 +149,52 @@ static void DrawLaser(Bitmap32 bmp)
     }
 }
 
+static void DrawMissile(Bitmap32 bmp, Color32 body, Color32 nose, bool plume)
+{
+    if (plume)
+    {
+        bmp.FillEllipse(8, 21, 7, 4, new Color32(246, 177, 60, 210));
+        bmp.FillEllipse(5, 21, 5, 3, new Color32(236, 106, 92, 180));
+        bmp.FillEllipse(3, 21, 3, 2, new Color32(62, 66, 69, 160));
+    }
+
+    bmp.FillPolygon(new[] { (9, 19), (16, 14), (29, 14), (35, 20), (29, 26), (16, 26) }, new Color32(21, 24, 30));
+    bmp.FillPolygon(new[] { (12, 19), (17, 16), (28, 16), (32, 20), (28, 24), (17, 24) }, body);
+    bmp.FillPolygon(new[] { (28, 16), (36, 20), (28, 24) }, nose);
+    bmp.FillRect(16, 17, 10, 2, body.Lighten(50));
+    bmp.FillPolygon(new[] { (15, 24), (22, 24), (18, 31) }, body.Darken(45));
+    bmp.FillPolygon(new[] { (15, 16), (22, 16), (18, 10) }, body.Darken(36));
+}
+
+static void DrawDrone(Bitmap32 bmp)
+{
+    var wing = new Color32(85, 101, 103);
+    var body = new Color32(183, 188, 171);
+    bmp.FillPolygon(new[] { (6, 20), (18, 15), (30, 20), (18, 25) }, new Color32(25, 28, 29));
+    bmp.FillPolygon(new[] { (8, 20), (18, 17), (28, 20), (18, 23) }, wing);
+    bmp.FillRect(15, 13, 7, 14, body);
+    bmp.FillPolygon(new[] { (15, 13), (22, 13), (18, 8) }, body.Lighten(35));
+    bmp.FillPolygon(new[] { (15, 27), (22, 27), (18, 32) }, body.Darken(52));
+    bmp.FillRect(13, 15, 3, 3, new Color32(238, 110, 84));
+    bmp.FillRect(22, 15, 3, 3, new Color32(238, 110, 84));
+}
+
+static void DrawPatriotBattery(Bitmap32 bmp)
+{
+    var launcher = new Color32(72, 111, 83);
+    bmp.FillRect(7, 25, 26, 5, new Color32(26, 31, 31));
+    bmp.FillRect(10, 22, 18, 5, launcher.Darken(20));
+    bmp.FillRect(13, 13, 22, 5, launcher);
+    bmp.FillRect(15, 10, 22, 5, launcher.Lighten(22));
+    bmp.FillRect(17, 7, 21, 5, launcher);
+    bmp.FillRect(11, 29, 5, 4, new Color32(30, 35, 38));
+    bmp.FillRect(25, 29, 5, 4, new Color32(30, 35, 38));
+    bmp.FillEllipse(13, 31, 3, 3, new Color32(8, 10, 12));
+    bmp.FillEllipse(27, 31, 3, 3, new Color32(8, 10, 12));
+    bmp.FillRect(5, 8, 6, 2, new Color32(246, 177, 60, 210));
+    bmp.FillRect(2, 8, 4, 2, new Color32(236, 106, 92, 180));
+}
+
 static void DrawIcon(Bitmap32 bmp, string id)
 {
     var hash = id.Aggregate(17, static (acc, c) => (acc * 31) + c);
@@ -172,6 +219,24 @@ static void DrawIcon(Bitmap32 bmp, string id)
     if (id.Contains("laser", StringComparison.OrdinalIgnoreCase))
     {
         DrawLaser(bmp);
+        return;
+    }
+
+    if (id.Contains("dark-eagle", StringComparison.OrdinalIgnoreCase))
+    {
+        DrawMissile(bmp, new Color32(210, 222, 215), new Color32(64, 74, 83), plume: true);
+        return;
+    }
+
+    if (id.Contains("shahed", StringComparison.OrdinalIgnoreCase) || id.Contains("drone", StringComparison.OrdinalIgnoreCase))
+    {
+        DrawDrone(bmp);
+        return;
+    }
+
+    if (id.Contains("patriot", StringComparison.OrdinalIgnoreCase))
+    {
+        DrawPatriotBattery(bmp);
         return;
     }
 

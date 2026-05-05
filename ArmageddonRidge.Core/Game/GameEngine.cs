@@ -36,7 +36,8 @@ public sealed class GameEngine
         var seed = settings.TerrainSeed ?? Random.Shared.Next(100_000, 999_999);
         var terrain = _terrainGenerator.Generate(seed);
         var player = CreateTank("player", "Ridge Runner", false, 160, terrain, 42);
-        var cpu = CreateTank("cpu", "Iron Oracle", true, GameConstants.WorldWidth - 160, terrain, 138);
+        var cpuProfile = CpuRivalProfile.ForSeed(seed);
+        var cpu = CreateTank("cpu", cpuProfile.TankName, true, GameConstants.WorldWidth - 160, terrain, 138);
 
         player.Cash = settings.StartingCash;
         cpu.Cash = CpuBudget(settings.Difficulty, 1);
@@ -55,6 +56,7 @@ public sealed class GameEngine
 
         state.Wind = NextWind(state);
         state.EventLog.Add($"Seed {seed}. The ridge wakes up.");
+        state.EventLog.Add($"Rival channel: {cpuProfile.DisplayName}.");
         return state;
     }
 
@@ -126,9 +128,26 @@ public sealed class GameEngine
         var simulation = SimulateWeapon(state, owner, opponent, weapon, owner.TurretAngle, shotPower);
         simulationWatch.Stop();
 
+        var intercepted = false;
+        Vector2? interceptPoint = null;
         var terrainWatch = Stopwatch.StartNew();
         var resolvedExplosions = new List<ExplosionResult>(simulation.Explosions.Count);
-        var touched = ResolveExplosions(state, owner, opponent, weapon, simulation.Explosions, resolvedExplosions);
+        int touched;
+        if (owner.IsCpu
+            && opponent.Upgrades.Contains(UpgradeType.PatriotBattery)
+            && PatriotDefense.ShouldIntercept(opponent, simulation.Explosions))
+        {
+            intercepted = true;
+            interceptPoint = PatriotDefense.InterceptPoint(opponent, simulation.Trail);
+            opponent.Upgrades.Remove(UpgradeType.PatriotBattery);
+            resolvedExplosions.Add(new ExplosionResult(interceptPoint.Value, 34, 0, 0, 0, false, false, [], ShotVisualKind.PatriotIntercept));
+            touched = 0;
+        }
+        else
+        {
+            touched = ResolveExplosions(state, owner, opponent, weapon, simulation.Explosions, resolvedExplosions);
+        }
+
         terrainWatch.Stop();
 
         var events = new List<string>();
@@ -140,6 +159,11 @@ public sealed class GameEngine
 
         events.Add($"{owner.Name} fired {weapon.DisplayName}.");
         state.EventLog.Add(events[^1]);
+        if (intercepted)
+        {
+            events.Add("Patriot Battery intercepted the incoming shot.");
+            state.EventLog.Add(events[^1]);
+        }
 
         var playerBeforeSettle = state.PlayerTank.Position.Y;
         var cpuBeforeSettle = state.CpuTank.Position.Y;
@@ -174,7 +198,7 @@ public sealed class GameEngine
 
         var perf = new PerformanceSample(simulationWatch.Elapsed.TotalMilliseconds, terrainWatch.Elapsed.TotalMilliseconds, cpuPlanningMs, simulation.Trail.Count, touched);
         state.LastPerformance = perf;
-        return new ShotResolution(weapon.Id, owner.Id, simulation.Trail, resolvedExplosions, events, winner is not null, winner, perf);
+        return new ShotResolution(weapon.Id, owner.Id, simulation.Trail, resolvedExplosions, events, winner is not null, winner, perf, VisualKindFor(weapon), intercepted, interceptPoint);
     }
 
     public bool BuyWeapon(GameState state, string weaponId, int count = 1) => Economy.BuyWeapon(state.PlayerTank, weaponId, count);
@@ -219,18 +243,20 @@ public sealed class GameEngine
         }
 
         var primary = _projectileSimulator.Simulate(state.Terrain, owner, opponent, weapon, angle, power, state.Wind);
-        if (weapon.BehaviorType != WeaponBehaviorType.Cluster)
+        if (weapon.BehaviorType != WeaponBehaviorType.Cluster && weapon.BehaviorType != WeaponBehaviorType.DroneSwarm)
         {
-            return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [])]);
+            return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [], VisualKindFor(weapon))]);
         }
 
         var explosions = new List<ExplosionResult>();
         var count = Math.Max(weapon.ClusterCount, 3);
         for (var i = 0; i < count; i++)
         {
-            var offset = (i - ((count - 1) / 2f)) * 20f;
-            var center = primary.ImpactPoint + new Vector2(offset, -MathF.Abs(offset) * 0.25f);
-            explosions.Add(new ExplosionResult(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, []));
+            var spacing = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm ? 28f : 20f;
+            var offset = (i - ((count - 1) / 2f)) * spacing;
+            var wave = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm ? ((i % 2) == 0 ? -10f : 6f) : 0f;
+            var center = primary.ImpactPoint + new Vector2(offset, (-MathF.Abs(offset) * 0.25f) + wave);
+            explosions.Add(new ExplosionResult(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], VisualKindFor(weapon)));
         }
 
         return new WeaponSimulation(primary.Trail, primary.ImpactPoint, explosions);
@@ -367,11 +393,44 @@ public sealed class GameEngine
             cpu.AddWeapon(WeaponIds.ClusterPopper, 1);
         }
 
+        if (round >= 4 && settings.Difficulty >= Difficulty.Normal)
+        {
+            cpu.AddWeapon(WeaponIds.ShahedDroneSwarm, 1);
+        }
+
+        if (round >= 5 && settings.Difficulty >= Difficulty.Veteran)
+        {
+            cpu.AddWeapon(WeaponIds.DarkEagle, 1);
+        }
+
         if (settings.EnableNuclearWeapons && round >= 5 && settings.Difficulty >= Difficulty.Maniac)
         {
             cpu.AddWeapon(WeaponIds.TacticalNuke, 1);
         }
     }
+
+    private static ShotVisualKind VisualKindFor(WeaponDefinition weapon) => weapon.BehaviorType switch
+    {
+        WeaponBehaviorType.Napalm => ShotVisualKind.Fire,
+        WeaponBehaviorType.Nuclear => ShotVisualKind.Nuclear,
+        WeaponBehaviorType.Missile => ShotVisualKind.Missile,
+        WeaponBehaviorType.DroneSwarm => ShotVisualKind.DroneSwarm,
+        WeaponBehaviorType.Laser => ShotVisualKind.Laser,
+        WeaponBehaviorType.Teleport => ShotVisualKind.Teleport,
+        WeaponBehaviorType.Dirt => ShotVisualKind.Dirt,
+        WeaponBehaviorType.Excavator => ShotVisualKind.Dirt,
+        _ => ShotVisualKind.Ballistic
+    };
 }
 
 internal sealed record WeaponSimulation(IReadOnlyList<Vector2> Trail, Vector2 ImpactPoint, IReadOnlyList<ExplosionResult> Explosions);
+
+internal readonly record struct CpuRivalProfile(string DisplayName, string TankName)
+{
+    public static CpuRivalProfile ForSeed(int seed) => (Math.Abs(seed) % 3) switch
+    {
+        0 => new("Volga Circuit rival, Russia-inspired arcade faction", "Volga Redline"),
+        1 => new("Zagros Signal rival, Iran-inspired arcade faction", "Zagros Signal"),
+        _ => new("Paektu Spark rival, North Korea-inspired arcade faction", "Paektu Spark")
+    };
+}

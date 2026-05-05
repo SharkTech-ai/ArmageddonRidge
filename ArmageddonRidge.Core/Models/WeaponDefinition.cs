@@ -39,6 +39,8 @@ public static class WeaponIds
     public const string BunkerBuster = "bunker-buster";
     public const string LaserLance = "laser-lance";
     public const string TeleportShot = "teleport-shot";
+    public const string DarkEagle = "dark-eagle";
+    public const string ShahedDroneSwarm = "shahed-drone-swarm";
     public const string TacticalNuke = "tactical-nuke";
     public const string DoomsdayNuke = "doomsday-nuke";
 }

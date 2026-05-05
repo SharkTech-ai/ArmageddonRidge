@@ -107,5 +107,26 @@ public sealed class GameEngineTests
         Assert.False(state.CpuTank.IsDestroyed);
     }
 
+    [Fact]
+    public void PatriotBatteryInterceptsThreateningCpuShotAndIsConsumed()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(Difficulty: Difficulty.Oracle, TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        engine.StartBattle(state);
+        state.CurrentTurn = TurnOwner.Cpu;
+        state.PlayerTank.Upgrades.Add(UpgradeType.PatriotBattery);
+        state.CpuTank.AddWeapon(WeaponIds.DarkEagle, 1);
+
+        var beforeHealth = state.PlayerTank.Health;
+
+        var result = engine.FireCurrentTurn(state, settings);
+
+        Assert.True(result.Intercepted);
+        Assert.Equal(ShotVisualKind.PatriotIntercept, Assert.Single(result.Explosions).VisualKind);
+        Assert.DoesNotContain(UpgradeType.PatriotBattery, state.PlayerTank.Upgrades);
+        Assert.Equal(beforeHealth, state.PlayerTank.Health);
+    }
+
     private static GameEngine CreateEngine() => new(new WeaponCatalog(), new UpgradeCatalog());
 }

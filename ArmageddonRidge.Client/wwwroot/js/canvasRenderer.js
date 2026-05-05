@@ -18,6 +18,8 @@ const cloudBands = [
     { x: 1010, y: 118, scale: 0.72, speed: 13 },
     { x: 1260, y: 48, scale: 0.96, speed: 9 }
 ];
+const weatherTypes = ["clear", "rain", "snow", "storm"];
+const terrainStride = 4;
 
 export async function initialize(element) {
     canvas = element;
@@ -46,7 +48,7 @@ export function render(scene) {
     return getStats();
 }
 
-export async function playShot(scene, trail, explosions, screenShake) {
+export async function playShot(scene, trail, explosions, screenShake, weaponId) {
     if (!ctx || !trail?.length) {
         render(scene);
         return;
@@ -79,7 +81,7 @@ export async function playShot(scene, trail, explosions, screenShake) {
             const count = Math.max(1, Math.floor(points.length * t));
             const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
             drawScene(shotScene, shake, -shake * 0.4);
-            drawTrail(points.slice(0, count));
+            drawTrail(points, count, weaponId);
             if (t < 1) {
                 requestAnimationFrame(tick);
                 return;
@@ -87,7 +89,7 @@ export async function playShot(scene, trail, explosions, screenShake) {
 
             requestAnimationFrame(() => {
                 drawScene(shotScene, 0, 0);
-                drawTrail(points);
+                drawTrail(points, points.length, weaponId);
                 finish();
             });
         };
@@ -115,11 +117,13 @@ function drawScene(scene, offsetX, offsetY) {
     ctx.save();
     ctx.setTransform(scaleX, 0, 0, scaleY, offsetX, offsetY);
     drawSky(scene);
+    drawWeather(scene, false);
     drawRadiation(scene.radiation ?? []);
     drawTerrain(scene.terrain ?? [], scene.world);
     drawTank(scene.player, "playerTank");
     drawTank(scene.cpu, "cpuTank");
     drawWind(scene.wind);
+    drawWeather(scene, true);
     ctx.restore();
 }
 
@@ -145,6 +149,94 @@ function drawClouds(scene) {
         const speed = (cloud.speed * 0.35) + (windStrength * 1.35);
         const x = positiveModulo(cloud.x + (windDirection * speed * nowSeconds), travel) - 150;
         drawCloud(x, cloud.y, cloud.scale);
+    }
+}
+
+function drawWeather(scene, foreground) {
+    const weather = resolveWeather(scene);
+    if (weather.type === "clear") {
+        return;
+    }
+
+    if (!foreground && weather.type === "storm") {
+        drawStormSky(scene, weather);
+        return;
+    }
+
+    if (weather.type === "rain" || weather.type === "storm") {
+        drawRain(scene, weather, foreground);
+    } else if (weather.type === "snow") {
+        drawSnow(scene, weather, foreground);
+    }
+}
+
+function resolveWeather(scene) {
+    const source = scene.weather ?? scene.world?.weather ?? scene.environment?.weather;
+    const explicit = typeof source === "string" ? source : source?.type ?? source?.kind;
+    const normalized = String(explicit ?? "").toLowerCase();
+    const wind = Number(scene.wind ?? 0);
+    const round = Number(scene.round ?? scene.turn ?? 0);
+    const phaseValue = scene.phase ? String(scene.phase).length : 0;
+    const seed = hash2d(Math.round(wind * 19) + round * 31, phaseValue + Math.round((scene.world?.width ?? 1200) * 0.1));
+    const type = weatherTypes.includes(normalized) ? normalized : weatherTypes[seed % weatherTypes.length];
+    const intensity = clamp01(Number(source?.intensity ?? source?.strength ?? (0.36 + (seed % 31) / 100)));
+    return { type, intensity, seed, wind };
+}
+
+function drawStormSky(scene, weather) {
+    const world = scene.world;
+    const pulse = Math.sin(performance.now() * 0.004 + weather.seed) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(19, 24, 34, ${0.18 + weather.intensity * 0.18})`;
+    ctx.fillRect(0, 0, world.width, world.height);
+
+    if ((weather.seed % 7) < 2 && pulse > 0.82) {
+        const x = 160 + (weather.seed % 820);
+        ctx.strokeStyle = `rgba(226, 238, 255, ${(pulse - 0.82) * 2.2})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 38);
+        ctx.lineTo(x + 24, 112);
+        ctx.lineTo(x - 5, 174);
+        ctx.lineTo(x + 42, 256);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(235, 245, 255, ${(pulse - 0.82) * 0.12})`;
+        ctx.fillRect(0, 0, world.width, world.height);
+    }
+}
+
+function drawRain(scene, weather, foreground) {
+    const world = scene.world;
+    const now = performance.now() * 0.001;
+    const baseCount = 58 + Math.floor(weather.intensity * 48);
+    const count = foreground ? baseCount : Math.floor(baseCount * 0.36);
+    const slant = clamp(weather.wind * 0.75, -34, 34);
+    const alpha = foreground ? (weather.type === "storm" ? 0.38 : 0.34) : 0.14;
+    ctx.strokeStyle = weather.type === "storm" ? `rgba(190, 218, 240, ${alpha})` : `rgba(207, 232, 245, ${alpha})`;
+    ctx.lineWidth = foreground ? 1.2 : 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < count; i++) {
+        const lane = hash2d(i + weather.seed, 19) % 1220;
+        const speed = 380 + (hash2d(i, weather.seed) % 180);
+        const x = positiveModulo(lane + slant * now * 5, world.width + 80) - 40;
+        const y = positiveModulo((hash2d(i, 43) % 720) + now * speed, world.height + 80) - 40;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + slant * 0.45, y + (foreground ? 24 : 16));
+    }
+    ctx.stroke();
+}
+
+function drawSnow(scene, weather, foreground) {
+    const world = scene.world;
+    const now = performance.now() * 0.001;
+    const baseCount = 42 + Math.floor(weather.intensity * 34);
+    const count = foreground ? baseCount : Math.floor(baseCount * 0.4);
+    ctx.fillStyle = foreground ? "rgba(246, 251, 255, 0.56)" : "rgba(246, 251, 255, 0.24)";
+    for (let i = 0; i < count; i++) {
+        const drift = Math.sin(now * 0.9 + i) * 18 + weather.wind * 0.25;
+        const x = positiveModulo((hash2d(i, weather.seed) % 1240) + drift + now * weather.wind * 2, world.width + 60) - 30;
+        const y = positiveModulo((hash2d(weather.seed, i) % 760) + now * (36 + (i % 5) * 9), world.height + 50) - 25;
+        const size = 1.2 + (i % 3) * 0.7;
+        ctx.fillRect(x, y, size, size);
     }
 }
 
@@ -196,25 +288,30 @@ function drawTerrain(terrain, world) {
     ctx.clip();
     drawTerrainStrata(terrain, worldHeight);
     drawTerrainGrain(terrain, worldHeight);
+    drawTerrainRocks(terrain, worldHeight);
     ctx.restore();
 
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(30, 42, 22, 0.65)";
+    ctx.lineWidth = 7;
+    strokeTerrainTop(terrain, terrainStride, 7);
     ctx.strokeStyle = "#8fbf64";
     ctx.lineWidth = 4;
-    strokeTerrainTop(terrain, 4);
+    strokeTerrainTop(terrain, terrainStride);
     ctx.strokeStyle = "rgba(232, 211, 143, 0.55)";
     ctx.lineWidth = 1.5;
     strokeTerrainTop(terrain, 6, 5);
+    drawTerrainGrass(terrain);
 }
 
 function drawTerrainStrata(terrain, worldHeight) {
-    for (let y = 370; y < worldHeight; y += 34) {
+    for (let y = 330; y < worldHeight; y += 28) {
         ctx.beginPath();
         let started = false;
-        for (let x = 0; x < terrain.length; x += 8) {
+        for (let x = 0; x < terrain.length; x += 7) {
             const surface = terrain[x] ?? worldHeight;
-            const lineY = y + Math.sin((x + y) * 0.018) * 5;
+            const lineY = y + Math.sin((x + y) * 0.018) * 5 + ((hash2d(x, y) % 5) - 2);
             if (lineY <= surface + 12) {
                 started = false;
                 continue;
@@ -228,8 +325,8 @@ function drawTerrainStrata(terrain, worldHeight) {
             }
         }
 
-        ctx.strokeStyle = y % 68 === 0 ? "rgba(116, 93, 65, 0.42)" : "rgba(232, 211, 143, 0.18)";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = y % 56 === 0 ? "rgba(112, 82, 54, 0.46)" : "rgba(226, 194, 128, 0.17)";
+        ctx.lineWidth = y % 84 === 0 ? 3 : 1.5;
         ctx.stroke();
     }
 }
@@ -242,6 +339,48 @@ function drawTerrainGrain(terrain, worldHeight) {
         const y = top + 12 + (hash2d(x, top) % Math.floor(depth));
         ctx.fillRect(x, y, 2, 1);
     }
+
+    ctx.fillStyle = "rgba(9, 9, 7, 0.2)";
+    for (let x = 9; x < terrain.length; x += 23) {
+        const top = terrain[x] ?? worldHeight;
+        const depth = Math.max(18, worldHeight - top);
+        const y = top + 18 + (hash2d(x, top + 11) % Math.floor(depth));
+        ctx.fillRect(x, y, 3, 2);
+    }
+}
+
+function drawTerrainRocks(terrain, worldHeight) {
+    for (let x = 14; x < terrain.length; x += 47) {
+        const top = terrain[x] ?? worldHeight;
+        const depth = worldHeight - top;
+        if (depth < 42) {
+            continue;
+        }
+
+        const y = top + 16 + (hash2d(x, top) % Math.min(150, Math.floor(depth - 12)));
+        const w = 5 + (hash2d(top, x) % 9);
+        const h = 3 + (hash2d(x + 7, top) % 5);
+        ctx.fillStyle = "rgba(18, 18, 16, 0.34)";
+        ctx.fillRect(x + 1, y + 1, w, h);
+        ctx.fillStyle = "rgba(145, 126, 93, 0.34)";
+        ctx.fillRect(x, y, w, Math.max(1, h - 1));
+        ctx.fillStyle = "rgba(230, 208, 151, 0.2)";
+        ctx.fillRect(x + 1, y, Math.max(2, w * 0.45), 1);
+    }
+}
+
+function drawTerrainGrass(terrain) {
+    ctx.strokeStyle = "rgba(159, 214, 94, 0.62)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 2; x < terrain.length; x += 11) {
+        const y = terrain[x] ?? 0;
+        const h = 3 + (hash2d(x, y) % 6);
+        const lean = ((hash2d(y, x) % 5) - 2) * 0.8;
+        ctx.moveTo(x, y + 1);
+        ctx.lineTo(x + lean, y - h);
+    }
+    ctx.stroke();
 }
 
 function strokeTerrainTop(terrain, step, yOffset = 0) {
@@ -410,22 +549,85 @@ function drawWind(wind) {
     ctx.fillText(`Wind ${arrow} ${Math.abs(wind ?? 0)}`, 545, 42);
 }
 
-function drawTrail(points) {
+function drawTrail(points, count = points.length, weaponId) {
+    if (!points?.length || count <= 0) {
+        return;
+    }
+
     ctx.save();
     ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
-    ctx.strokeStyle = "#fff6bf";
-    ctx.lineWidth = 3;
+    const visibleCount = Math.min(points.length, count);
+    const missileLike = isMissileWeapon(weaponId) || (!weaponId && visibleCount > 36);
+    if (missileLike) {
+        drawSmokeTrail(points, visibleCount, weaponId);
+    }
+
+    ctx.strokeStyle = missileLike ? "rgba(255, 246, 191, 0.86)" : "#fff6bf";
+    ctx.lineWidth = missileLike ? 2.2 : 3;
     ctx.beginPath();
-    points.forEach((point, index) => {
+    for (let index = 0; index < visibleCount; index++) {
+        const point = points[index];
         if (index === 0) {
             ctx.moveTo(point.x, point.y);
         } else {
             ctx.lineTo(point.x, point.y);
         }
-    });
+    }
     ctx.stroke();
-    const last = points[points.length - 1];
-    drawSprite("shell", last.x - 9, last.y - 5, 18, 9);
+    const last = points[visibleCount - 1];
+    const prev = points[Math.max(0, visibleCount - 3)];
+    drawFlameTip(last, prev, missileLike);
+    if (missileLike) {
+        drawOrientedSprite("missile", last.x, last.y, 34, 14, Math.atan2(last.y - prev.y, last.x - prev.x));
+    } else {
+        drawSprite("shell", last.x - 9, last.y - 5, 18, 9);
+    }
+    ctx.restore();
+}
+
+function drawSmokeTrail(points, count, weaponId) {
+    const napalm = isNapalmWeapon(weaponId);
+    const step = Math.max(2, Math.floor(count / 28));
+    for (let i = Math.max(0, count - 120); i < count; i += step) {
+        const point = points[i];
+        const age = (count - i) / Math.max(count, 1);
+        const wobble = (hash2d(i, count) % 9) - 4;
+        const size = 3 + age * 15 + (i % 3);
+        ctx.fillStyle = napalm
+            ? `rgba(78, 45, 32, ${0.12 + age * 0.18})`
+            : `rgba(62, 64, 62, ${0.12 + age * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(point.x + wobble, point.y + Math.sin(i) * 2, size, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (napalm && i > count - 38) {
+            ctx.fillStyle = `rgba(255, 103, 35, ${0.34 * (1 - age)})`;
+            ctx.beginPath();
+            ctx.arc(point.x - wobble * 0.4, point.y + 2, size * 0.42, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+function drawFlameTip(last, prev, missileLike) {
+    if (!missileLike) {
+        return;
+    }
+
+    const dx = last.x - prev.x;
+    const dy = last.y - prev.y;
+    const angle = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(last.x, last.y);
+    ctx.rotate(angle);
+    const gradient = ctx.createRadialGradient(-6, 0, 1, -6, 0, 15);
+    gradient.addColorStop(0, "#fff6bf");
+    gradient.addColorStop(0.42, "rgba(255, 126, 38, 0.82)");
+    gradient.addColorStop(1, "rgba(255, 62, 28, 0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(-8, 0, 18, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 }
 
@@ -457,11 +659,13 @@ function drawExplosions(explosions, progress = 1) {
     ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
     for (const explosion of explosions) {
         const radius = explosion.radius ?? 32;
+        const lava = isLavaExplosion(explosion);
+        const patriot = isPatriotExplosion(explosion);
         const bloom = radius * (0.45 + progress * 0.9);
         const fade = Math.max(0, 1 - progress);
         const flash = Math.max(0, 1 - progress * 2.2);
-        const spriteName = explosion.nuclear ? "nuclear" : radius > 58 ? "explosionLarge" : "explosionSmall";
-        const spriteSize = radius * (1.4 + progress * 0.95);
+        const spriteName = patriot ? "shield" : explosion.nuclear ? "nuclear" : radius > 58 ? "explosionLarge" : "explosionSmall";
+        const spriteSize = radius * (1.4 + progress * (explosion.nuclear ? 1.4 : 0.95));
         ctx.save();
         ctx.globalAlpha = Math.min(1, 0.25 + progress * 1.2) * Math.max(0.18, 1 - progress * 0.16);
         drawSprite(spriteName, explosion.x - spriteSize / 2, explosion.y - spriteSize / 2, spriteSize, spriteSize);
@@ -469,8 +673,8 @@ function drawExplosions(explosions, progress = 1) {
 
         const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, bloom);
         gradient.addColorStop(0, "#fffdf0");
-        gradient.addColorStop(0.22, explosion.nuclear ? "#d7ff6a" : "#ffdc68");
-        gradient.addColorStop(0.58, explosion.nuclear ? "rgba(101, 197, 78, 0.58)" : "rgba(236, 106, 92, 0.72)");
+        gradient.addColorStop(0.22, patriot ? "#9fd6ff" : explosion.nuclear ? "#d7ff6a" : lava ? "#fff06a" : "#ffdc68");
+        gradient.addColorStop(0.58, patriot ? "rgba(71, 165, 255, 0.58)" : explosion.nuclear ? "rgba(101, 197, 78, 0.58)" : lava ? "rgba(255, 80, 24, 0.78)" : "rgba(236, 106, 92, 0.72)");
         gradient.addColorStop(1, "rgba(28, 22, 18, 0)");
         ctx.fillStyle = gradient;
         ctx.beginPath();
@@ -483,7 +687,7 @@ function drawExplosions(explosions, progress = 1) {
         ctx.arc(explosion.x, explosion.y, radius * (0.65 + progress * 1.1), 0, Math.PI * 2);
         ctx.stroke();
 
-        drawBlastSparks(explosion, radius, progress);
+        drawBlastSparks(explosion, radius, progress, lava);
         drawSmokePuffs(explosion, radius, progress);
 
         if (flash > 0) {
@@ -493,25 +697,30 @@ function drawExplosions(explosions, progress = 1) {
             ctx.fill();
         }
 
-        if (explosion.nuclear) {
+        if (patriot) {
+            drawPatriotIntercept(explosion, radius, progress);
+        } else if (explosion.nuclear) {
+            drawNukeColumn(explosion, radius, progress);
             ctx.strokeStyle = `rgba(213, 255, 106, ${0.75 * fade})`;
             ctx.lineWidth = 6;
             ctx.beginPath();
             ctx.arc(explosion.x, explosion.y, radius * (1.1 + progress * 1.15), 0, Math.PI * 2);
             ctx.stroke();
+        } else if (lava) {
+            drawLavaSplash(explosion, radius, progress);
         }
     }
     ctx.restore();
 }
 
-function drawBlastSparks(explosion, radius, progress) {
-    const count = explosion.nuclear ? 22 : 14;
-    ctx.strokeStyle = `rgba(255, 218, 104, ${Math.max(0, 1 - progress)})`;
+function drawBlastSparks(explosion, radius, progress, lava = false) {
+    const count = explosion.nuclear ? 28 : lava ? 20 : 14;
+    ctx.strokeStyle = lava ? `rgba(255, 82, 28, ${Math.max(0, 1 - progress * 0.75)})` : `rgba(255, 218, 104, ${Math.max(0, 1 - progress)})`;
     ctx.lineWidth = 2;
     for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i / count) + hash2d(i, radius) * 0.0009;
         const inner = radius * (0.24 + progress * 0.38);
-        const outer = radius * (0.42 + progress * (0.78 + (i % 3) * 0.12));
+        const outer = radius * (0.42 + progress * ((lava ? 1.02 : 0.78) + (i % 3) * 0.12));
         ctx.beginPath();
         ctx.moveTo(explosion.x + Math.cos(angle) * inner, explosion.y + Math.sin(angle) * inner);
         ctx.lineTo(explosion.x + Math.cos(angle) * outer, explosion.y + Math.sin(angle) * outer);
@@ -534,6 +743,91 @@ function drawSmokePuffs(explosion, radius, progress) {
     }
 }
 
+function drawLavaSplash(explosion, radius, progress) {
+    const fade = Math.max(0, 1 - progress * 0.55);
+    for (let i = 0; i < 13; i++) {
+        const angle = -Math.PI + (Math.PI * i / 12);
+        const arc = radius * (0.35 + progress * (0.55 + (i % 4) * 0.1));
+        const x = explosion.x + Math.cos(angle) * arc;
+        const y = explosion.y + Math.sin(angle) * arc + progress * radius * 0.65;
+        ctx.fillStyle = i % 2 === 0 ? `rgba(255, 215, 74, ${0.75 * fade})` : `rgba(255, 75, 24, ${0.78 * fade})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * (0.035 + (i % 3) * 0.012), 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.fillStyle = `rgba(255, 68, 22, ${0.28 * fade})`;
+    ctx.fillRect(explosion.x - radius * 0.55, explosion.y + radius * 0.18, radius * 1.1, Math.max(3, radius * 0.08));
+    ctx.fillStyle = `rgba(255, 225, 92, ${0.34 * fade})`;
+    ctx.fillRect(explosion.x - radius * 0.34, explosion.y + radius * 0.2, radius * 0.68, Math.max(2, radius * 0.035));
+}
+
+function drawNukeColumn(explosion, radius, progress) {
+    const fade = Math.max(0, 1 - progress * 0.45);
+    const stemHeight = radius * (1.15 + progress * 1.35);
+    const stemWidth = radius * (0.22 + progress * 0.18);
+    const x = explosion.x;
+    const y = explosion.y;
+    const gradient = ctx.createLinearGradient(x, y - stemHeight, x, y + radius * 0.25);
+    gradient.addColorStop(0, `rgba(225, 255, 166, ${0.06 * fade})`);
+    gradient.addColorStop(0.45, `rgba(241, 244, 205, ${0.22 * fade})`);
+    gradient.addColorStop(1, `rgba(79, 62, 48, ${0.32 * fade})`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(x, y - stemHeight * 0.45, stemWidth, stemHeight * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(235, 255, 182, ${0.48 * (1 - progress)})`;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x, y - radius * (0.45 + i * 0.25), radius * (0.38 + progress * 0.72 + i * 0.16), 0, Math.PI * 2);
+        ctx.stroke();
+    }
+}
+
+function isMissileWeapon(weaponId) {
+    const id = String(weaponId ?? "").toLowerCase();
+    return id.includes("missile") || id.includes("rocket") || id.includes("nuke") || id.includes("napalm")
+        || id.includes("dark-eagle") || id.includes("hypersonic") || id.includes("shahed") || id.includes("drone");
+}
+
+function isNapalmWeapon(weaponId) {
+    const id = String(weaponId ?? "").toLowerCase();
+    return id.includes("napalm") || id.includes("lava");
+}
+
+function isLavaExplosion(explosion) {
+    const id = String(explosion.weaponId ?? explosion.weapon ?? explosion.kind ?? "").toLowerCase();
+    return Boolean(explosion.lava || explosion.napalm || id === "napalm-flask" || id.includes("napalm") || id.includes("lava"));
+}
+
+function isPatriotExplosion(explosion) {
+    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
+    return Boolean(explosion.patriotIntercept || kind.includes("patriot"));
+}
+
+function drawPatriotIntercept(explosion, radius, progress) {
+    const fade = Math.max(0, 1 - progress);
+    ctx.strokeStyle = `rgba(113, 198, 255, ${0.82 * fade})`;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius * (0.45 + progress * (0.78 + i * 0.24)), 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = `rgba(255, 248, 217, ${0.75 * fade})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 10; i++) {
+        const angle = (Math.PI * 2 * i / 10) + progress * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(explosion.x + Math.cos(angle) * radius * 0.18, explosion.y + Math.sin(angle) * radius * 0.18);
+        ctx.lineTo(explosion.x + Math.cos(angle) * radius * (0.9 + progress * 0.42), explosion.y + Math.sin(angle) * radius * (0.9 + progress * 0.42));
+        ctx.stroke();
+    }
+}
+
 function drawSprite(name, x, y, width, height) {
     const frame = manifest?.frames?.[name];
     if (!atlas || !frame) {
@@ -542,6 +836,14 @@ function drawSprite(name, x, y, width, height) {
     }
 
     ctx.drawImage(atlas, frame.x, frame.y, frame.w, frame.h, x, y, width, height);
+}
+
+function drawOrientedSprite(name, x, y, width, height, angle) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    drawSprite(name, -width * 0.5, -height * 0.5, width, height);
+    ctx.restore();
 }
 
 function drawSpriteFacing(name, x, y, width, height, facing = 1) {
@@ -630,4 +932,12 @@ function hash2d(x, y) {
 
 function positiveModulo(value, divisor) {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function clamp01(value) {
+    return clamp(Number.isFinite(value) ? value : 0.45, 0, 1);
 }

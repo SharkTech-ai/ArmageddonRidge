@@ -31,7 +31,7 @@ public sealed class CanvasRenderer : IAsyncDisposable
         return await _module.InvokeAsync<RenderStats>("render", scene);
     }
 
-    public async ValueTask PlayShotAsync(object scene, IReadOnlyList<Vector2> trail, IReadOnlyList<ExplosionResult> explosions, bool screenShake)
+    public async ValueTask PlayShotAsync(object scene, IReadOnlyList<Vector2> trail, IReadOnlyList<ExplosionResult> explosions, bool screenShake, string? weaponId = null)
     {
         if (_module is null)
         {
@@ -42,17 +42,28 @@ public sealed class CanvasRenderer : IAsyncDisposable
             "playShot",
             scene,
             trail.Select(static point => new { x = point.X, y = point.Y }),
-            explosions.Select(static explosion => new
+            explosions.Select(explosion => new
             {
                 x = explosion.Center.X,
                 y = explosion.Center.Y,
                 radius = explosion.DamageRadius,
                 terrainRadius = explosion.TerrainRadius,
                 nuclear = explosion.Nuclear,
-                dirt = explosion.DirtAdded
+                dirt = explosion.DirtAdded,
+                weaponId,
+                visualKind = explosion.VisualKind.ToString(),
+                napalm = explosion.VisualKind == ShotVisualKind.Fire,
+                lava = explosion.VisualKind == ShotVisualKind.Lava,
+                missile = explosion.VisualKind == ShotVisualKind.Missile,
+                drone = explosion.VisualKind == ShotVisualKind.DroneSwarm,
+                patriotIntercept = explosion.VisualKind == ShotVisualKind.PatriotIntercept
             }),
-            screenShake);
+            screenShake,
+            weaponId);
     }
+
+    public ValueTask PlayShotAsync(object scene, ShotResolution resolution, bool screenShake) =>
+        PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId);
 
     public async ValueTask<RenderStats?> GetStatsAsync()
     {

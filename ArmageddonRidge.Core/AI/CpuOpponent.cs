@@ -43,6 +43,11 @@ public sealed class CpuOpponent
                         - (weapon.Cost * profile.CostPenalty)
                         + (simulation.StopReason == ProjectileStopReason.TankHit ? 400 : 0);
 
+                    if (weapon.BehaviorType == WeaponBehaviorType.DroneSwarm)
+                    {
+                        score += 60;
+                    }
+
                     if (weapon.Category == WeaponCategory.Nuclear && selfRisk / MathF.Max(weapon.BlastRadius, 1) > profile.NukeSelfRiskTolerance)
                     {
                         score -= 900;
@@ -53,7 +58,7 @@ public sealed class CpuOpponent
                     {
                         var angleNoise = Noise(state, weapon.Id, angle, power, 1, profile.AngleNoise);
                         var powerNoise = Noise(state, weapon.Id, angle, power, 2, profile.PowerNoise);
-                        best = new CpuShotPlan(weapon.Id, angle + angleNoise, power + (int)powerNoise, TauntFor(weapon), score, watch.Elapsed.TotalMilliseconds);
+                        best = new CpuShotPlan(weapon.Id, angle + angleNoise, power + (int)powerNoise, TauntFor(state.CpuTank, weapon), score, watch.Elapsed.TotalMilliseconds);
                     }
                 }
             }
@@ -92,19 +97,30 @@ public sealed class CpuOpponent
         return (hash & 0x7fffffff) / (float)int.MaxValue;
     }
 
-    private static string TauntFor(WeaponDefinition weapon)
+    private static string TauntFor(Tank cpu, WeaponDefinition weapon)
     {
         if (weapon.Category == WeaponCategory.Nuclear)
         {
-            return "I brought sunscreen. And a warhead.";
+            return $"{cpu.Name}: I brought sunscreen. And a warhead.";
         }
 
-        return weapon.BehaviorType switch
+        if (weapon.Id == WeaponIds.ShahedDroneSwarm)
+        {
+            return $"{cpu.Name}: Arcade drones inbound. Very dramatic, barely regulated.";
+        }
+
+        if (weapon.Id == WeaponIds.DarkEagle)
+        {
+            return $"{cpu.Name}: Low wind, high drama.";
+        }
+
+        var line = weapon.BehaviorType switch
         {
             WeaponBehaviorType.Dirt => "That hill looks expensive.",
             WeaponBehaviorType.Laser => "Wind is merely a suggestion.",
             _ => "Your crater awaits."
         };
+        return $"{cpu.Name}: {line}";
     }
 }
 

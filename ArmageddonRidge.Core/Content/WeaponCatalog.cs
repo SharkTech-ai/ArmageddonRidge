@@ -21,8 +21,10 @@ public sealed class WeaponCatalog
             new WeaponDefinition(WeaponIds.BunkerBuster, "Bunker Buster", WeaponCategory.AreaDamage, 450, 75, 32, 82, 1.1f, 1f, 0.45f, WeaponBehaviorType.BunkerBuster, true, 0.1f, 2f, "Punches deeper before exploding."),
             new WeaponDefinition(WeaponIds.LaserLance, "Laser Lance", WeaponCategory.Precision, 650, 50, 20, 12, 1f, 0f, 0f, WeaponBehaviorType.Laser, false, 0.15f, 2.5f, "Straight beam. Wind is irrelevant."),
             new WeaponDefinition(WeaponIds.TeleportShot, "Teleport Shot", WeaponCategory.Utility, 300, 0, 0, 0, 1f, 1f, 0.7f, WeaponBehaviorType.Teleport, false, 0f, 1f, "Reposition before the next shot."),
-            new WeaponDefinition(WeaponIds.TacticalNuke, "Tactical Nuke", WeaponCategory.Nuclear, 1500, 110, 110, 130, 0.85f, 1f, 0.75f, WeaponBehaviorType.Nuclear, true, 0.25f, 1.2f, "Huge crater, shockwave, and temporary radiation.", RadiationTurns: 2, RadiationDamagePerTurn: 5),
-            new WeaponDefinition(WeaponIds.DoomsdayNuke, "Doomsday Nuke", WeaponCategory.Nuclear, 4000, 180, 190, 240, 0.75f, 1f, 0.5f, WeaponBehaviorType.Nuclear, true, 0.4f, 1.1f, "Rare endgame battlefield reset.", RadiationTurns: 3, RadiationDamagePerTurn: 8)
+            new WeaponDefinition(WeaponIds.DarkEagle, "Dark Eagle", WeaponCategory.Precision, 700, 95, 44, 54, 1.65f, 0.85f, 0.12f, WeaponBehaviorType.Missile, true, 0.18f, 1.35f, "Arcade hypersonic strike: very fast and barely cares about wind."),
+            new WeaponDefinition(WeaponIds.ShahedDroneSwarm, "Shahed Drone Swarm", WeaponCategory.Cluster, 550, 18, 24, 22, 0.82f, 0.75f, 0.45f, WeaponBehaviorType.DroneSwarm, true, 0.03f, 1.4f, "Stylized rival drone swarm that scatters into small impacts.", 6),
+            new WeaponDefinition(WeaponIds.TacticalNuke, "Tactical Nuke", WeaponCategory.Nuclear, 850, 110, 110, 130, 0.85f, 1f, 0.75f, WeaponBehaviorType.Nuclear, true, 0.25f, 1.2f, "Huge crater, shockwave, and temporary radiation.", RadiationTurns: 2, RadiationDamagePerTurn: 5),
+            new WeaponDefinition(WeaponIds.DoomsdayNuke, "Doomsday Nuke", WeaponCategory.Nuclear, 1600, 180, 190, 240, 0.75f, 1f, 0.5f, WeaponBehaviorType.Nuclear, true, 0.4f, 1.1f, "Rare endgame battlefield reset.", RadiationTurns: 3, RadiationDamagePerTurn: 8)
         };
 
         _weapons = weapons.ToDictionary(static weapon => weapon.Id, StringComparer.OrdinalIgnoreCase);
