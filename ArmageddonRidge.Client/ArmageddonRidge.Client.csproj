@@ -22,4 +22,8 @@
     <ProjectReference Include="..\ArmageddonRidge.Core\ArmageddonRidge.Core.csproj" />
   </ItemGroup>
 
+  <Target Name="RefreshLocalDevDotNetLoader" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And Exists('$(IntermediateOutputPath)dotnet.js')">
+    <Copy SourceFiles="$(IntermediateOutputPath)dotnet.js" DestinationFiles="wwwroot\js\dotnetLoader.js" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

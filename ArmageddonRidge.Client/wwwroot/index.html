@@ -52,7 +52,7 @@
             await Blazor.start({
                 loadBootResource: (type, name, defaultUri) => {
                     if (armageddonRidgeIsLocalHost && type === 'dotnetjs') {
-                        return new URL(`_framework/dotnet.js?localdev=${Date.now()}`, document.baseURI).toString();
+                        return new URL(`js/dotnetLoader.js?localdev=${Date.now()}`, document.baseURI).toString();
                     }
 
                     return defaultUri;
