@@ -46,42 +46,39 @@
         <div class="battle-layout @(_state.Phase == GamePhase.Battle ? "is-battle" : "")">
             <section class="battlefield-panel @(_playerHurt ? "player-hurt" : "") @(_cpuHurt ? "cpu-hurt" : "")">
                 <canvas @ref="_canvas" class="battlefield" width="1200" height="700" aria-label="Armageddon Ridge battlefield"></canvas>
-                @if (_state.Phase == GamePhase.Battle)
-                {
-                    <div class="battle-hud @(AnyTankHurt ? "hurt-flash" : "")" aria-label="Battle health">
-                        <div class="versus-health player @(_playerHurt ? "is-hurt" : "")">
-                            <div class="fighter-label">
-                                <span>Player</span>
-                                <strong>@_state.PlayerTank.Health HP</strong>
-                            </div>
-                            <div class="fighter-bar health">
-                                <span style="width:@TankHealthWidth(_state.PlayerTank)"></span>
-                            </div>
-                            <div class="fighter-bar shield">
-                                <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
-                            </div>
+                <div class="battle-hud @(AnyTankHurt ? "hurt-flash" : "")" aria-label="Battle health">
+                    <div class="versus-health player @(_playerHurt ? "is-hurt" : "")">
+                        <div class="fighter-label">
+                            <span>Player</span>
+                            <strong>@_state.PlayerTank.Health HP</strong>
                         </div>
-
-                        <div class="round-chip">
-                            <span>Round @_state.RoundNumber</span>
-                            <strong>@_state.Phase</strong>
-                            <small class="round-wind">@WindText</small>
+                        <div class="fighter-bar health">
+                            <span style="width:@TankHealthWidth(_state.PlayerTank)"></span>
                         </div>
-
-                        <div class="versus-health cpu @(_cpuHurt ? "is-hurt" : "")">
-                            <div class="fighter-label">
-                                <span>@_state.CpuTank.Name</span>
-                                <strong>@_state.CpuTank.Health HP</strong>
-                            </div>
-                            <div class="fighter-bar health">
-                                <span style="width:@TankHealthWidth(_state.CpuTank)"></span>
-                            </div>
-                            <div class="fighter-bar shield">
-                                <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
-                            </div>
+                        <div class="fighter-bar shield">
+                            <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
                         </div>
                     </div>
-                }
+
+                    <div class="round-chip">
+                        <span>Round @_state.RoundNumber</span>
+                        <strong>@_state.Phase</strong>
+                        <small class="round-wind">@WindText</small>
+                    </div>
+
+                    <div class="versus-health cpu @(_cpuHurt ? "is-hurt" : "")">
+                        <div class="fighter-label">
+                            <span>@_state.CpuTank.Name</span>
+                            <strong>@_state.CpuTank.Health HP</strong>
+                        </div>
+                        <div class="fighter-bar health">
+                            <span style="width:@TankHealthWidth(_state.CpuTank)"></span>
+                        </div>
+                        <div class="fighter-bar shield">
+                            <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
+                        </div>
+                    </div>
+                </div>
                 @if (_showPerf)
                 {
                     <div class="perf-overlay">
