@@ -13,7 +13,9 @@ public sealed record ExplosionResult(
     bool DirtAdded,
     bool Nuclear,
     IReadOnlyList<RadiationZone> RadiationZones,
-    ShotVisualKind VisualKind = ShotVisualKind.Ballistic);
+    ShotVisualKind VisualKind = ShotVisualKind.Ballistic,
+    float MaxDamageOverride = 0,
+    int TriggerTrailIndex = -1);
 
 public sealed record ShotResolution(
     string WeaponId,

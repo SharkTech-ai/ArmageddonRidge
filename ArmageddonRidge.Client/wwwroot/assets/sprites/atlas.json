@@ -1,5 +1,5 @@
 {
-  "version": "2026-05-04-genesis-v4",
+  "version": "2026-05-04-genesis-v6",
   "image": "assets/sprites/armageddon-ridge-sprites.png",
   "frames": {
     "playerTank": {
@@ -23,7 +23,7 @@
     "playerHull": {
       "x": 63,
       "y": 392,
-      "w": 145,
+      "w": 181,
       "h": 108
     },
     "playerTankMid": {
@@ -47,7 +47,7 @@
     "cpuHull": {
       "x": 944,
       "y": 395,
-      "w": 145,
+      "w": 181,
       "h": 105
     },
     "cpuTankMid": {

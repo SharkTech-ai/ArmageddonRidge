@@ -20,6 +20,17 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void NewMatchUsesFastPlaytestEconomyAndHealth()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123, EnableShop: false));
+
+        Assert.Equal(75, state.PlayerTank.MaxHealth);
+        Assert.Equal(75, state.CpuTank.MaxHealth);
+        Assert.Equal(5000, state.PlayerTank.Cash);
+    }
+
+    [Fact]
     public void BuyingWeaponAddsInventoryAndSpendsCash()
     {
         var engine = CreateEngine();
@@ -126,6 +137,30 @@ public sealed class GameEngineTests
         Assert.Equal(ShotVisualKind.PatriotIntercept, Assert.Single(result.Explosions).VisualKind);
         Assert.DoesNotContain(UpgradeType.PatriotBattery, state.PlayerTank.Upgrades);
         Assert.Equal(beforeHealth, state.PlayerTank.Health);
+    }
+
+    [Fact]
+    public void MassiveOrdnancePenetratorProducesStagedPrimaryAndSecondaryExplosions()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.Gbu57Mop, 1);
+        state.SelectedWeaponId = WeaponIds.Gbu57Mop;
+        engine.StartBattle(state);
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 42, power: 65);
+
+        Assert.Equal(WeaponIds.Gbu57Mop, result.WeaponId);
+        Assert.Equal(2, result.Explosions.Count);
+        var primary = result.Explosions[0];
+        var secondary = result.Explosions[1];
+        Assert.Equal(ShotVisualKind.PenetratorPrimary, primary.VisualKind);
+        Assert.Equal(ShotVisualKind.PenetratorSecondary, secondary.VisualKind);
+        Assert.InRange(primary.TriggerTrailIndex, 0, result.Trail.Count - 1);
+        Assert.Equal(-1, secondary.TriggerTrailIndex);
+        Assert.True(secondary.DamageRadius > primary.DamageRadius);
+        Assert.True(secondary.TerrainRadius > primary.TerrainRadius);
     }
 
     private static GameEngine CreateEngine() => new(new WeaponCatalog(), new UpgradeCatalog());

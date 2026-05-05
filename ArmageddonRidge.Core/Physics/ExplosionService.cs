@@ -10,7 +10,8 @@ public sealed class ExplosionService
         Vector2 center,
         Tank owner,
         Tank opponent,
-        List<RadiationZone> zones)
+        List<RadiationZone> zones,
+        ShotVisualKind? visualKind = null)
     {
         var ownerDamage = weapon.CanDamageSelf ? ApplyDamage(owner, center, weapon) : 0;
         var opponentDamage = ApplyDamage(opponent, center, weapon);
@@ -32,7 +33,7 @@ public sealed class ExplosionService
             weapon.BehaviorType == WeaponBehaviorType.Dirt,
             weapon.Category == WeaponCategory.Nuclear,
             newZones,
-            VisualKindFor(weapon));
+            visualKind ?? VisualKindFor(weapon));
     }
 
     public float ApplyRadiation(Tank tank, List<RadiationZone> zones)
@@ -104,6 +105,7 @@ public sealed class ExplosionService
         WeaponBehaviorType.Nuclear => ShotVisualKind.Nuclear,
         WeaponBehaviorType.Missile => ShotVisualKind.Missile,
         WeaponBehaviorType.DroneSwarm => ShotVisualKind.DroneSwarm,
+        WeaponBehaviorType.MultiStagePenetrator => ShotVisualKind.PenetratorSecondary,
         WeaponBehaviorType.Laser => ShotVisualKind.Laser,
         WeaponBehaviorType.Teleport => ShotVisualKind.Teleport,
         WeaponBehaviorType.Dirt => ShotVisualKind.Dirt,

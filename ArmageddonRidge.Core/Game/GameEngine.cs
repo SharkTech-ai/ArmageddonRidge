@@ -243,6 +243,11 @@ public sealed class GameEngine
         }
 
         var primary = _projectileSimulator.Simulate(state.Terrain, owner, opponent, weapon, angle, power, state.Wind);
+        if (weapon.BehaviorType == WeaponBehaviorType.MultiStagePenetrator)
+        {
+            return SimulateMultiStagePenetrator(primary, owner, weapon);
+        }
+
         if (weapon.BehaviorType != WeaponBehaviorType.Cluster && weapon.BehaviorType != WeaponBehaviorType.DroneSwarm)
         {
             return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [], VisualKindFor(weapon))]);
@@ -262,23 +267,93 @@ public sealed class GameEngine
         return new WeaponSimulation(primary.Trail, primary.ImpactPoint, explosions);
     }
 
+    private static WeaponSimulation SimulateMultiStagePenetrator(ProjectileSimulation primary, Tank owner, WeaponDefinition weapon)
+    {
+        var trail = new List<Vector2>(primary.Trail.Count + 18);
+        trail.AddRange(primary.Trail);
+        if (trail.Count == 0)
+        {
+            trail.Add(primary.ImpactPoint);
+        }
+
+        var impact = primary.ImpactPoint;
+        var previous = trail.Count > 1 ? trail[^2] : owner.Center;
+        var direction = impact - previous;
+        if (direction.LengthSquared() < 0.001f)
+        {
+            direction = new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f);
+        }
+
+        direction = Vector2.Normalize(new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)));
+        var firstTriggerIndex = Math.Max(0, trail.Count - 1);
+        const int burrowSteps = 18;
+        const float burrowDistance = 96f;
+        for (var i = 1; i <= burrowSteps; i++)
+        {
+            var t = i / (float)burrowSteps;
+            var wander = new Vector2(MathF.Sin(t * MathF.PI) * (owner.IsCpu ? -6f : 6f), t * t * 14f);
+            trail.Add(ClampToWorld(impact + (direction * burrowDistance * t) + wander));
+        }
+
+        var primaryExplosion = new ExplosionResult(
+            impact,
+            MathF.Max(30f, weapon.BlastRadius * 0.52f),
+            MathF.Max(50f, weapon.TerrainRadius * 0.44f),
+            0,
+            0,
+            false,
+            false,
+            [],
+            ShotVisualKind.PenetratorPrimary,
+            MathF.Max(36f, weapon.MaxDamage * 0.46f),
+            firstTriggerIndex);
+
+        var secondaryExplosion = new ExplosionResult(
+            trail[^1],
+            weapon.BlastRadius,
+            weapon.TerrainRadius,
+            0,
+            0,
+            false,
+            false,
+            [],
+            ShotVisualKind.PenetratorSecondary);
+
+        return new WeaponSimulation(trail, trail[^1], [primaryExplosion, secondaryExplosion]);
+    }
+
     private int ResolveExplosions(GameState state, Tank owner, Tank opponent, WeaponDefinition weapon, IReadOnlyList<ExplosionResult> pending, List<ExplosionResult> resolvedExplosions)
     {
         var touched = 0;
         for (var i = 0; i < pending.Count; i++)
         {
-            var center = pending[i].Center;
-            var resolved = _explosionService.Resolve(weapon, center, owner, opponent, state.RadiationZones);
+            var pendingExplosion = pending[i];
+            var center = pendingExplosion.Center;
+            var effectiveWeapon = weapon with
+            {
+                MaxDamage = pendingExplosion.MaxDamageOverride > 0 ? pendingExplosion.MaxDamageOverride : weapon.MaxDamage,
+                BlastRadius = pendingExplosion.DamageRadius > 0 ? pendingExplosion.DamageRadius : weapon.BlastRadius,
+                TerrainRadius = pendingExplosion.TerrainRadius > 0 ? pendingExplosion.TerrainRadius : weapon.TerrainRadius
+            };
+            var resolved = _explosionService.Resolve(effectiveWeapon, center, owner, opponent, state.RadiationZones, pendingExplosion.VisualKind) with
+            {
+                MaxDamageOverride = pendingExplosion.MaxDamageOverride,
+                TriggerTrailIndex = pendingExplosion.TriggerTrailIndex
+            };
             resolvedExplosions.Add(resolved);
 
-            if (weapon.TerrainRadius > 0)
+            if (effectiveWeapon.TerrainRadius > 0)
             {
-                touched += _terrainDeformer.Apply(state.Terrain, weapon, center);
+                touched += _terrainDeformer.Apply(state.Terrain, effectiveWeapon, center);
             }
         }
 
         return touched;
     }
+
+    private static Vector2 ClampToWorld(Vector2 point) => new(
+        Math.Clamp(point.X, 0, GameConstants.WorldWidth - 1),
+        Math.Clamp(point.Y, 0, GameConstants.WorldHeight - 1));
 
     private static Tank CreateTank(string id, string name, bool isCpu, float x, TerrainMask terrain, float angle)
     {
@@ -403,6 +478,11 @@ public sealed class GameEngine
             cpu.AddWeapon(WeaponIds.DarkEagle, 1);
         }
 
+        if (round >= 6 && settings.Difficulty >= Difficulty.Veteran)
+        {
+            cpu.AddWeapon(WeaponIds.Gbu57Mop, 1);
+        }
+
         if (settings.EnableNuclearWeapons && round >= 5 && settings.Difficulty >= Difficulty.Maniac)
         {
             cpu.AddWeapon(WeaponIds.TacticalNuke, 1);
@@ -415,6 +495,7 @@ public sealed class GameEngine
         WeaponBehaviorType.Nuclear => ShotVisualKind.Nuclear,
         WeaponBehaviorType.Missile => ShotVisualKind.Missile,
         WeaponBehaviorType.DroneSwarm => ShotVisualKind.DroneSwarm,
+        WeaponBehaviorType.MultiStagePenetrator => ShotVisualKind.PenetratorSecondary,
         WeaponBehaviorType.Laser => ShotVisualKind.Laser,
         WeaponBehaviorType.Teleport => ShotVisualKind.Teleport,
         WeaponBehaviorType.Dirt => ShotVisualKind.Dirt,

@@ -6,7 +6,7 @@ var repoRoot = FindRepoRoot();
 var spriteRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites");
 var iconRoot = Path.Combine(spriteRoot, "icons");
 var sourceSheet = Path.Combine(repoRoot, "tools", "ArmageddonRidge.AssetPipeline", "assets", "generated-tank-sheet.png");
-const string AssetVersion = "2026-05-04-genesis-v4";
+const string AssetVersion = "2026-05-04-genesis-v6";
 Directory.CreateDirectory(spriteRoot);
 Directory.CreateDirectory(iconRoot);
 
@@ -22,11 +22,11 @@ var frames = new Dictionary<string, Frame>
     ["playerTank"] = new(85, 40, 467, 264),
     ["cpuTank"] = new(657, 40, 465, 265),
     ["playerTankLow"] = new(63, 392, 217, 108),
-    ["playerHull"] = new(63, 392, 145, 108),
+    ["playerHull"] = new(63, 392, 181, 108),
     ["playerTankMid"] = new(321, 367, 284, 133),
     ["playerTankHigh"] = new(626, 333, 205, 167),
     ["cpuTankLow"] = new(944, 395, 215, 105),
-    ["cpuHull"] = new(944, 395, 145, 105),
+    ["cpuHull"] = new(944, 395, 181, 105),
     ["cpuTankMid"] = new(1213, 365, 220, 135),
     ["cpuTankHigh"] = new(1490, 338, 216, 162),
     ["playerTurret"] = new(321, 368, 284, 132),
@@ -51,7 +51,7 @@ var iconIds = new[]
 {
     "heavy-shell", "baby-missile", "cluster-popper", "splitter-mirv", "napalm-flask", "dirt-drop",
     "excavator", "bunker-buster", "laser-lance", "teleport-shot", "tactical-nuke", "doomsday-nuke",
-    "dark-eagle", "shahed-drone-swarm",
+    "dark-eagle", "shahed-drone-swarm", "gbu-57-mop",
     "lightshield", "heavyshield", "reflectorshield", "parachute", "repairkit", "battery", "teleporter",
     "windmeter", "tracerrounds", "targetingcomputer", "patriotbattery", "patriot-battery"
 };
@@ -62,6 +62,14 @@ foreach (var id in iconIds)
     DrawIcon(icon, id);
     icon.WritePng(Path.Combine(iconRoot, $"{id}.png"));
 }
+
+var shahedSprite = new Bitmap32(96, 48, Color32.Transparent);
+DrawDroneSprite(shahedSprite);
+shahedSprite.WritePng(Path.Combine(spriteRoot, "shahed-drone.png"));
+
+var mopSprite = new Bitmap32(112, 40, Color32.Transparent);
+DrawMopSprite(mopSprite);
+mopSprite.WritePng(Path.Combine(spriteRoot, "gbu-57-mop.png"));
 
 Console.WriteLine($"Wrote sprites to {spriteRoot}");
 
@@ -168,15 +176,52 @@ static void DrawMissile(Bitmap32 bmp, Color32 body, Color32 nose, bool plume)
 
 static void DrawDrone(Bitmap32 bmp)
 {
-    var wing = new Color32(85, 101, 103);
-    var body = new Color32(183, 188, 171);
-    bmp.FillPolygon(new[] { (6, 20), (18, 15), (30, 20), (18, 25) }, new Color32(25, 28, 29));
-    bmp.FillPolygon(new[] { (8, 20), (18, 17), (28, 20), (18, 23) }, wing);
-    bmp.FillRect(15, 13, 7, 14, body);
-    bmp.FillPolygon(new[] { (15, 13), (22, 13), (18, 8) }, body.Lighten(35));
-    bmp.FillPolygon(new[] { (15, 27), (22, 27), (18, 32) }, body.Darken(52));
-    bmp.FillRect(13, 15, 3, 3, new Color32(238, 110, 84));
-    bmp.FillRect(22, 15, 3, 3, new Color32(238, 110, 84));
+    var outline = new Color32(18, 21, 23);
+    var wing = new Color32(88, 102, 96);
+    var body = new Color32(189, 194, 169);
+    bmp.FillPolygon(new[] { (7, 20), (28, 10), (22, 20), (28, 30) }, outline);
+    bmp.FillPolygon(new[] { (10, 20), (25, 13), (20, 20), (25, 27) }, wing);
+    bmp.FillRect(13, 18, 17, 4, body);
+    bmp.FillPolygon(new[] { (27, 15), (36, 20), (27, 25) }, body.Lighten(20));
+    bmp.FillPolygon(new[] { (11, 16), (16, 18), (11, 20) }, new Color32(221, 104, 83));
+    bmp.FillPolygon(new[] { (11, 24), (16, 22), (11, 20) }, new Color32(221, 104, 83));
+}
+
+static void DrawDroneSprite(Bitmap32 bmp)
+{
+    var outline = new Color32(13, 16, 17);
+    var shadow = new Color32(0, 0, 0, 90);
+    var wing = new Color32(83, 98, 92);
+    var wingDark = new Color32(42, 52, 50);
+    var body = new Color32(190, 196, 174);
+    var highlight = new Color32(238, 232, 183);
+    bmp.FillEllipse(40, 30, 31, 8, shadow);
+    bmp.FillPolygon(new[] { (8, 24), (65, 6), (50, 24), (65, 42) }, outline);
+    bmp.FillPolygon(new[] { (14, 24), (58, 10), (46, 24), (58, 38) }, wing);
+    bmp.FillPolygon(new[] { (20, 24), (48, 17), (41, 24), (48, 31) }, wingDark);
+    bmp.FillPolygon(new[] { (48, 16), (86, 24), (48, 32) }, body);
+    bmp.FillRect(34, 21, 32, 6, body.Lighten(12));
+    bmp.FillRect(47, 18, 16, 2, highlight);
+    bmp.FillPolygon(new[] { (13, 15), (25, 21), (12, 23) }, new Color32(224, 102, 82));
+    bmp.FillPolygon(new[] { (13, 33), (25, 27), (12, 25) }, new Color32(224, 102, 82));
+    bmp.FillRect(70, 22, 8, 4, body.Lighten(28));
+}
+
+static void DrawMopSprite(Bitmap32 bmp)
+{
+    var outline = new Color32(16, 19, 24);
+    var metal = new Color32(142, 154, 160);
+    var dark = new Color32(48, 57, 66);
+    var brass = new Color32(232, 190, 83);
+    bmp.FillEllipse(54, 28, 45, 7, new Color32(0, 0, 0, 92));
+    bmp.FillPolygon(new[] { (10, 19), (24, 10), (88, 10), (105, 20), (88, 30), (24, 30) }, outline);
+    bmp.FillPolygon(new[] { (17, 19), (28, 13), (84, 13), (98, 20), (84, 27), (28, 27) }, metal);
+    bmp.FillPolygon(new[] { (84, 13), (104, 20), (84, 27) }, dark.Lighten(16));
+    bmp.FillRect(40, 14, 9, 13, brass);
+    bmp.FillRect(58, 14, 6, 13, dark);
+    bmp.FillRect(28, 15, 28, 3, metal.Lighten(55));
+    bmp.FillPolygon(new[] { (18, 10), (35, 14), (20, 20) }, dark);
+    bmp.FillPolygon(new[] { (18, 30), (35, 26), (20, 20) }, dark);
 }
 
 static void DrawPatriotBattery(Bitmap32 bmp)
@@ -225,6 +270,13 @@ static void DrawIcon(Bitmap32 bmp, string id)
     if (id.Contains("dark-eagle", StringComparison.OrdinalIgnoreCase))
     {
         DrawMissile(bmp, new Color32(210, 222, 215), new Color32(64, 74, 83), plume: true);
+        return;
+    }
+
+    if (id.Contains("gbu", StringComparison.OrdinalIgnoreCase) || id.Contains("mop", StringComparison.OrdinalIgnoreCase))
+    {
+        DrawMissile(bmp, new Color32(148, 158, 164), new Color32(42, 51, 59), plume: false);
+        bmp.FillRect(18, 17, 4, 6, new Color32(232, 190, 83));
         return;
     }
 

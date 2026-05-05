@@ -114,13 +114,17 @@ public sealed class CpuOpponent
             return $"{cpu.Name}: Low wind, high drama.";
         }
 
+        if (weapon.Id == WeaponIds.Gbu57Mop)
+        {
+            return $"{cpu.Name}: Two-stage problem incoming.";
+        }
+
         var line = weapon.BehaviorType switch
         {
-            WeaponBehaviorType.Dirt => "That hill looks expensive.",
             WeaponBehaviorType.Laser => "Wind is merely a suggestion.",
-            _ => "Your crater awaits."
+            _ => ""
         };
-        return $"{cpu.Name}: {line}";
+        return string.IsNullOrWhiteSpace(line) ? "" : $"{cpu.Name}: {line}";
     }
 }
 

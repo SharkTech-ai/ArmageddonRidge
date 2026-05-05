@@ -56,7 +56,8 @@ public sealed class CanvasRenderer : IAsyncDisposable
                 lava = explosion.VisualKind == ShotVisualKind.Lava,
                 missile = explosion.VisualKind == ShotVisualKind.Missile,
                 drone = explosion.VisualKind == ShotVisualKind.DroneSwarm,
-                patriotIntercept = explosion.VisualKind == ShotVisualKind.PatriotIntercept
+                patriotIntercept = explosion.VisualKind == ShotVisualKind.PatriotIntercept,
+                triggerIndex = explosion.TriggerTrailIndex
             }),
             screenShake,
             weaponId);

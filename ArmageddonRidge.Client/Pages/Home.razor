@@ -81,10 +81,6 @@
                         </div>
                     </div>
                 }
-                @if (!string.IsNullOrWhiteSpace(_taunt))
-                {
-                    <div class="taunt">@_taunt</div>
-                }
                 @if (_showPerf)
                 {
                     <div class="perf-overlay">
@@ -204,7 +200,6 @@
     private bool _screenShake = true;
     private bool _reducedMotion;
     private float _sfxVolume = 0.9f;
-    private string _taunt = "";
     private int _fps = 60;
     private double _frameMs = 16.7;
     private double _renderMs;
@@ -263,7 +258,6 @@
         _settings = new MatchSettings(Difficulty: _difficulty, TerrainSeed: Random.Shared.Next(10_000, 99_999));
         _state = Engine.NewMatch(_settings);
         ResetRenderCache();
-        _taunt = "";
         await Audio.UnlockAsync();
         await Audio.PlayAsync("menu");
     }
@@ -305,8 +299,8 @@
         var cpuHealthBefore = _state.CpuTank.Health;
         var playerPreShotScene = BuildScene();
         var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
-        await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
         await PlayResolutionAsync(playerPreShotScene, playerShot);
+        await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
 
         if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
         {
@@ -315,13 +309,8 @@
             cpuHealthBefore = _state.CpuTank.Health;
             var cpuPreShotScene = BuildScene();
             var cpuShot = Engine.FireCurrentTurn(_state, _settings);
-            await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
-            _taunt = cpuShot.Events.FirstOrDefault(static e => e.Contains("Wind", StringComparison.OrdinalIgnoreCase)
-                || e.Contains("Calculating", StringComparison.OrdinalIgnoreCase)
-                || e.Contains("warhead", StringComparison.OrdinalIgnoreCase)
-                || e.Contains("crater", StringComparison.OrdinalIgnoreCase)
-                || e.Contains("hill", StringComparison.OrdinalIgnoreCase)) ?? "";
             await PlayResolutionAsync(cpuPreShotScene, cpuShot);
+            await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore);
         }
 
         _canFire = true;

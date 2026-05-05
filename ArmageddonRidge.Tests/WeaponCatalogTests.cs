@@ -11,6 +11,7 @@ public sealed class WeaponCatalogTests
         var catalog = new WeaponCatalog();
         var darkEagle = catalog.Get(WeaponIds.DarkEagle);
         var drones = catalog.Get(WeaponIds.ShahedDroneSwarm);
+        var mop = catalog.Get(WeaponIds.Gbu57Mop);
 
         Assert.Equal("Dark Eagle", darkEagle.DisplayName);
         Assert.Equal(WeaponBehaviorType.Missile, darkEagle.BehaviorType);
@@ -20,7 +21,11 @@ public sealed class WeaponCatalogTests
         Assert.Equal("Shahed Drone Swarm", drones.DisplayName);
         Assert.Equal(WeaponBehaviorType.DroneSwarm, drones.BehaviorType);
         Assert.Equal(WeaponCategory.Cluster, drones.Category);
-        Assert.True(drones.ClusterCount >= 5);
+        Assert.InRange(drones.ClusterCount, 3, 5);
+
+        Assert.Equal("GBU-57 MOP", mop.DisplayName);
+        Assert.Equal(WeaponBehaviorType.MultiStagePenetrator, mop.BehaviorType);
+        Assert.True(mop.TerrainRadius > mop.BlastRadius);
     }
 
     [Fact]

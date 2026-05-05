@@ -14,9 +14,9 @@ public static class GameConstants
     public const int WindMax = 24;
     public const int PowerMin = 1;
     public const int PowerMax = 100;
-    public const int StartingHealth = 100;
+    public const int StartingHealth = 75;
     public const int ArmorUpgradeMax = 150;
-    public const int StartingCash = 1000;
+    public const int StartingCash = 5000;
     public const int WinReward = 750;
     public const int LossConsolation = 300;
     public const int KillBonus = 500;

@@ -48,7 +48,8 @@ public enum WeaponBehaviorType
     Nuclear,
     Napalm,
     Missile,
-    DroneSwarm
+    DroneSwarm,
+    MultiStagePenetrator
 }
 
 public enum UpgradeType
@@ -77,5 +78,7 @@ public enum ShotVisualKind
     Laser,
     Teleport,
     Dirt,
-    PatriotIntercept
+    PatriotIntercept,
+    PenetratorPrimary,
+    PenetratorSecondary
 }

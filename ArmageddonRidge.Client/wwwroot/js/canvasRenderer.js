@@ -1,6 +1,7 @@
 let canvas;
 let ctx;
 let atlas;
+let extraSprites = {};
 let manifest;
 let lastFrame = performance.now();
 let fps = 60;
@@ -10,7 +11,7 @@ let lastScene;
 let cachedTerrain;
 let rafId = 0;
 let shotInProgress = false;
-const spriteManifestVersion = "2026-05-04-genesis-v4";
+const spriteManifestVersion = "2026-05-04-genesis-v6";
 const cloudBands = [
     { x: 90, y: 64, scale: 1.08, speed: 7 },
     { x: 360, y: 104, scale: 0.84, speed: 11 },
@@ -57,12 +58,16 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
     const shotScene = prepareScene(scene);
     shotInProgress = true;
     const points = Array.from(trail);
-    const duration = Math.min(1200, Math.max(260, points.length * 4));
+    const stagedExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) >= 0);
+    const finalExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) < 0);
+    const stagedStarts = new Map();
+    const dramaticFlight = isDroneWeapon(weaponId) || isMopWeapon(weaponId);
+    const duration = Math.min(dramaticFlight ? 1600 : 1200, Math.max(dramaticFlight ? 620 : 260, points.length * (dramaticFlight ? 5.5 : 4)));
     const started = performance.now();
 
     return new Promise(resolve => {
         const finish = () => {
-            if (!explosions?.length) {
+            if (!finalExplosions.length) {
                 setTimeout(() => {
                     shotInProgress = false;
                     resolve();
@@ -70,7 +75,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
                 return;
             }
 
-            animateExplosions(scene, explosions ?? [], screenShake).then(() => {
+            animateExplosions(scene, finalExplosions, screenShake).then(() => {
                 shotInProgress = false;
                 resolve();
             });
@@ -82,6 +87,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
             const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
             drawScene(shotScene, shake, -shake * 0.4);
             drawTrail(points, count, weaponId);
+            drawTriggeredExplosions(stagedExplosions, count, now, stagedStarts);
             if (t < 1) {
                 requestAnimationFrame(tick);
                 return;
@@ -90,6 +96,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
             requestAnimationFrame(() => {
                 drawScene(shotScene, 0, 0);
                 drawTrail(points, points.length, weaponId);
+                drawTriggeredExplosions(stagedExplosions, points.length, performance.now(), stagedStarts);
                 finish();
             });
         };
@@ -122,7 +129,9 @@ function drawScene(scene, offsetX, offsetY) {
     drawTerrain(scene.terrain ?? [], scene.world);
     drawTank(scene.player, "playerTank");
     drawTank(scene.cpu, "cpuTank");
-    drawWind(scene.wind);
+    if (String(scene.phase ?? "").toLowerCase() !== "battle") {
+        drawWind(scene.wind);
+    }
     drawWeather(scene, true);
     ctx.restore();
 }
@@ -445,18 +454,18 @@ function drawTankSprite(tank, baseFrameName) {
         return;
     }
 
-    const targetHeight = tank.isCpu ? 54 : 56;
+    const targetHeight = tank.isCpu ? 66 : 68;
     const targetWidth = targetHeight * (frame.w / frame.h);
     const anchorX = targetWidth * 0.5;
-    const footY = tank.y + 4;
+    const footY = tank.y + 3;
     drawSpriteFacing(frameName, tank.x - anchorX, footY - targetHeight, targetWidth, targetHeight, tank.isCpu ? -1 : 1);
     drawTankBarrel(tank);
 }
 
 function drawTankBarrel(tank) {
     const facing = tank.isCpu ? -1 : 1;
-    const pivotX = tank.x + (facing * 15);
-    const pivotY = tank.y - 38;
+    const pivotX = tank.x + (facing * 18);
+    const pivotY = tank.y - 44;
     const angle = Number(tank?.angle ?? (tank?.isCpu ? 138 : 42));
     const length = 48;
 
@@ -492,10 +501,11 @@ function drawTankBarrel(tank) {
     ctx.lineTo(length - 8, -3);
     ctx.stroke();
 
-    ctx.fillStyle = "#070a0d";
-    for (let x = 12; x < length - 4; x += 12) {
-        ctx.fillRect(x, -5, 3, 10);
-    }
+    ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+    ctx.fillRect(length * 0.38, -3, 2, 6);
+    ctx.fillRect(length * 0.66, -3, 2, 6);
+    ctx.fillStyle = "rgba(7, 10, 13, 0.46)";
+    ctx.fillRect(length * 0.5, 3, length * 0.28, 2);
 
     ctx.fillStyle = "#1b2028";
     ctx.fillRect(length - 2, -6, 8, 12);
@@ -557,6 +567,12 @@ function drawTrail(points, count = points.length, weaponId) {
     ctx.save();
     ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
     const visibleCount = Math.min(points.length, count);
+    if (isDroneWeapon(weaponId)) {
+        drawDroneSwarmTrail(points, visibleCount, weaponId);
+        ctx.restore();
+        return;
+    }
+
     const missileLike = isMissileWeapon(weaponId) || (!weaponId && visibleCount > 36);
     if (missileLike) {
         drawSmokeTrail(points, visibleCount, weaponId);
@@ -577,7 +593,9 @@ function drawTrail(points, count = points.length, weaponId) {
     const last = points[visibleCount - 1];
     const prev = points[Math.max(0, visibleCount - 3)];
     drawFlameTip(last, prev, missileLike);
-    if (missileLike) {
+    if (isMopWeapon(weaponId)) {
+        drawMopProjectile(last, prev);
+    } else if (missileLike) {
         drawOrientedSprite("missile", last.x, last.y, 34, 14, Math.atan2(last.y - prev.y, last.x - prev.x));
     } else {
         drawSprite("shell", last.x - 9, last.y - 5, 18, 9);
@@ -609,6 +627,91 @@ function drawSmokeTrail(points, count, weaponId) {
     }
 }
 
+function drawDroneSwarmTrail(points, count, weaponId) {
+    const droneCount = 5;
+    const visibleCount = Math.min(points.length, count);
+    if (visibleCount <= 0) {
+        return;
+    }
+
+    for (let drone = 0; drone < droneCount; drone++) {
+        const lag = drone * 4;
+        const headIndex = Math.max(0, visibleCount - 1 - lag);
+        const startIndex = Math.max(0, headIndex - 92);
+        const phase = drone * 1.73;
+        ctx.fillStyle = drone % 2 === 0 ? "rgba(255, 231, 139, 0.7)" : "rgba(126, 226, 213, 0.62)";
+
+        for (let i = startIndex; i <= headIndex; i += 6) {
+            const point = dronePoint(points[i], i, drone, phase);
+            const age = (headIndex - i) / Math.max(1, headIndex - startIndex);
+            const alpha = Math.max(0.12, 0.52 * (1 - age));
+            ctx.fillStyle = `rgba(255, 231, 139, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 1.5 + (drone % 2), 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        const head = dronePoint(points[headIndex], headIndex, drone, phase);
+        const tailIndex = Math.max(0, headIndex - 5);
+        const tail = dronePoint(points[tailIndex], tailIndex, drone, phase);
+        const angle = Math.atan2(head.y - tail.y, head.x - tail.x);
+        drawShahedDrone(head.x, head.y, angle, weaponId, 1 + (drone % 3) * 0.06);
+    }
+}
+
+function dronePoint(point, index, drone, phase) {
+    const lane = drone - 2;
+    const wobble = 6 + (drone % 3) * 3;
+    return {
+        x: point.x + (lane * 7) + Math.sin((index * 0.18) + phase) * wobble,
+        y: point.y + Math.cos((index * 0.23) + phase) * wobble * 0.62 + Math.sin((index * 0.07) + phase) * 4
+    };
+}
+
+function drawShahedDrone(x, y, angle, weaponId, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+    if (extraSprites.shahedDrone) {
+        ctx.drawImage(extraSprites.shahedDrone, -24, -12, 48, 24);
+        ctx.restore();
+        return;
+    }
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 15, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#15191b";
+    ctx.beginPath();
+    ctx.moveTo(18, 0);
+    ctx.lineTo(-15, -11);
+    ctx.lineTo(-7, 0);
+    ctx.lineTo(-15, 11);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#bbc3aa";
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-10, -8);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-10, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#59666a";
+    ctx.fillRect(-7, -2, 17, 4);
+    ctx.fillStyle = "#f4e9b4";
+    ctx.fillRect(1, -5, 7, 2);
+    ctx.fillStyle = "#e96a54";
+    ctx.fillRect(-10, -6, 3, 3);
+    ctx.fillRect(-10, 3, 3, 3);
+    ctx.restore();
+}
+
 function drawFlameTip(last, prev, missileLike) {
     if (!missileLike) {
         return;
@@ -629,6 +732,69 @@ function drawFlameTip(last, prev, missileLike) {
     ctx.ellipse(-8, 0, 18, 7, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+}
+
+function drawMopProjectile(last, prev) {
+    const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
+    ctx.save();
+    ctx.translate(last.x, last.y);
+    ctx.rotate(angle);
+    if (extraSprites.gbu57Mop) {
+        ctx.drawImage(extraSprites.gbu57Mop, -30, -11, 60, 22);
+        ctx.restore();
+        return;
+    }
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
+    ctx.beginPath();
+    ctx.ellipse(-2, 4, 23, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const body = ctx.createLinearGradient(-22, -5, -22, 5);
+    body.addColorStop(0, "#f2f1dc");
+    body.addColorStop(0.32, "#9da7ad");
+    body.addColorStop(0.72, "#3d454d");
+    body.addColorStop(1, "#12171e");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(13, -6);
+    ctx.lineTo(-20, -6);
+    ctx.lineTo(-27, 0);
+    ctx.lineTo(-20, 6);
+    ctx.lineTo(13, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#f0d264";
+    ctx.fillRect(-11, -4, 4, 8);
+    ctx.fillStyle = "#161b23";
+    ctx.fillRect(-23, -10, 8, 5);
+    ctx.fillRect(-23, 5, 8, 5);
+    ctx.fillStyle = "#fff8d9";
+    ctx.fillRect(7, -3, 9, 2);
+    ctx.restore();
+}
+
+function drawTriggeredExplosions(explosions, visibleTrailCount, now, starts) {
+    if (!explosions.length) {
+        return;
+    }
+
+    for (const explosion of explosions) {
+        const triggerIndex = Number(explosion.triggerIndex ?? -1);
+        if (triggerIndex < 0 || visibleTrailCount <= triggerIndex) {
+            continue;
+        }
+
+        const key = `${triggerIndex}:${Math.round(explosion.x)}:${Math.round(explosion.y)}`;
+        if (!starts.has(key)) {
+            starts.set(key, now);
+        }
+
+        const progress = clamp01((now - starts.get(key)) / 330);
+        drawExplosions([explosion], progress);
+    }
 }
 
 function animateExplosions(scene, explosions, screenShake) {
@@ -661,10 +827,11 @@ function drawExplosions(explosions, progress = 1) {
         const radius = explosion.radius ?? 32;
         const lava = isLavaExplosion(explosion);
         const patriot = isPatriotExplosion(explosion);
+        const penetrator = isPenetratorExplosion(explosion);
         const bloom = radius * (0.45 + progress * 0.9);
         const fade = Math.max(0, 1 - progress);
         const flash = Math.max(0, 1 - progress * 2.2);
-        const spriteName = patriot ? "shield" : explosion.nuclear ? "nuclear" : radius > 58 ? "explosionLarge" : "explosionSmall";
+        const spriteName = patriot ? "shield" : explosion.nuclear ? "nuclear" : radius > 58 || penetrator ? "explosionLarge" : "explosionSmall";
         const spriteSize = radius * (1.4 + progress * (explosion.nuclear ? 1.4 : 0.95));
         ctx.save();
         ctx.globalAlpha = Math.min(1, 0.25 + progress * 1.2) * Math.max(0.18, 1 - progress * 0.16);
@@ -673,8 +840,8 @@ function drawExplosions(explosions, progress = 1) {
 
         const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, bloom);
         gradient.addColorStop(0, "#fffdf0");
-        gradient.addColorStop(0.22, patriot ? "#9fd6ff" : explosion.nuclear ? "#d7ff6a" : lava ? "#fff06a" : "#ffdc68");
-        gradient.addColorStop(0.58, patriot ? "rgba(71, 165, 255, 0.58)" : explosion.nuclear ? "rgba(101, 197, 78, 0.58)" : lava ? "rgba(255, 80, 24, 0.78)" : "rgba(236, 106, 92, 0.72)");
+        gradient.addColorStop(0.22, patriot ? "#9fd6ff" : explosion.nuclear ? "#d7ff6a" : lava ? "#fff06a" : penetrator ? "#ffd276" : "#ffdc68");
+        gradient.addColorStop(0.58, patriot ? "rgba(71, 165, 255, 0.58)" : explosion.nuclear ? "rgba(101, 197, 78, 0.58)" : lava ? "rgba(255, 80, 24, 0.78)" : penetrator ? "rgba(191, 92, 48, 0.72)" : "rgba(236, 106, 92, 0.72)");
         gradient.addColorStop(1, "rgba(28, 22, 18, 0)");
         ctx.fillStyle = gradient;
         ctx.beginPath();
@@ -699,6 +866,8 @@ function drawExplosions(explosions, progress = 1) {
 
         if (patriot) {
             drawPatriotIntercept(explosion, radius, progress);
+        } else if (penetrator) {
+            drawPenetratorShock(explosion, radius, progress);
         } else if (explosion.nuclear) {
             drawNukeColumn(explosion, radius, progress);
             ctx.strokeStyle = `rgba(213, 255, 106, ${0.75 * fade})`;
@@ -789,7 +958,18 @@ function drawNukeColumn(explosion, radius, progress) {
 function isMissileWeapon(weaponId) {
     const id = String(weaponId ?? "").toLowerCase();
     return id.includes("missile") || id.includes("rocket") || id.includes("nuke") || id.includes("napalm")
-        || id.includes("dark-eagle") || id.includes("hypersonic") || id.includes("shahed") || id.includes("drone");
+        || id.includes("dark-eagle") || id.includes("hypersonic") || id.includes("shahed") || id.includes("drone")
+        || id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
+}
+
+function isDroneWeapon(weaponId) {
+    const id = String(weaponId ?? "").toLowerCase();
+    return id.includes("shahed") || id.includes("drone");
+}
+
+function isMopWeapon(weaponId) {
+    const id = String(weaponId ?? "").toLowerCase();
+    return id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
 }
 
 function isNapalmWeapon(weaponId) {
@@ -805,6 +985,11 @@ function isLavaExplosion(explosion) {
 function isPatriotExplosion(explosion) {
     const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
     return Boolean(explosion.patriotIntercept || kind.includes("patriot"));
+}
+
+function isPenetratorExplosion(explosion) {
+    const kind = String(explosion.visualKind ?? explosion.kind ?? explosion.weaponId ?? "").toLowerCase();
+    return kind.includes("penetrator") || kind.includes("mop") || kind.includes("gbu");
 }
 
 function drawPatriotIntercept(explosion, radius, progress) {
@@ -826,6 +1011,33 @@ function drawPatriotIntercept(explosion, radius, progress) {
         ctx.lineTo(explosion.x + Math.cos(angle) * radius * (0.9 + progress * 0.42), explosion.y + Math.sin(angle) * radius * (0.9 + progress * 0.42));
         ctx.stroke();
     }
+}
+
+function drawPenetratorShock(explosion, radius, progress) {
+    const kind = String(explosion.visualKind ?? "").toLowerCase();
+    const secondary = kind.includes("secondary");
+    const fade = Math.max(0, 1 - progress);
+    ctx.strokeStyle = secondary
+        ? `rgba(255, 216, 118, ${0.82 * fade})`
+        : `rgba(255, 246, 191, ${0.62 * fade})`;
+    ctx.lineWidth = secondary ? 5 : 3;
+    for (let i = 0; i < (secondary ? 3 : 2); i++) {
+        ctx.beginPath();
+        ctx.ellipse(
+            explosion.x,
+            explosion.y + radius * 0.1,
+            radius * (0.38 + progress * (0.7 + i * 0.22)),
+            radius * (0.2 + progress * (0.42 + i * 0.12)),
+            0,
+            0,
+            Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = `rgba(92, 68, 45, ${0.28 * fade})`;
+    ctx.beginPath();
+    ctx.ellipse(explosion.x, explosion.y + radius * 0.38, radius * (0.68 + progress * 0.22), radius * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 function drawSprite(name, x, y, width, height) {
@@ -877,6 +1089,19 @@ async function loadSprites() {
         manifest = { frames: {} };
         atlas = undefined;
     }
+
+    extraSprites = {};
+    await Promise.allSettled([
+        loadExtraSprite("shahedDrone", "assets/sprites/shahed-drone.png"),
+        loadExtraSprite("gbu57Mop", "assets/sprites/gbu-57-mop.png")
+    ]);
+}
+
+async function loadExtraSprite(name, url) {
+    const image = new Image();
+    image.src = cacheBustedUrl(url, spriteManifestVersion);
+    await image.decode();
+    extraSprites[name] = image;
 }
 
 function cacheBustedUrl(url, version) {

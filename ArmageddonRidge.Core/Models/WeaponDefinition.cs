@@ -41,6 +41,7 @@ public static class WeaponIds
     public const string TeleportShot = "teleport-shot";
     public const string DarkEagle = "dark-eagle";
     public const string ShahedDroneSwarm = "shahed-drone-swarm";
+    public const string Gbu57Mop = "gbu-57-mop";
     public const string TacticalNuke = "tactical-nuke";
     public const string DoomsdayNuke = "doomsday-nuke";
 }

@@ -40,6 +40,28 @@ public sealed class AssetManifestTests
         }
     }
 
+    [Fact]
+    public void GeneratedWeaponSpritesAndIconsExist()
+    {
+        var repoRoot = FindRepoRoot();
+        var spriteRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites");
+
+        foreach (var relativePath in new[]
+        {
+            "shahed-drone.png",
+            "gbu-57-mop.png",
+            Path.Combine("icons", "shahed-drone-swarm.png"),
+            Path.Combine("icons", "gbu-57-mop.png")
+        })
+        {
+            var path = Path.Combine(spriteRoot, relativePath);
+            Assert.True(File.Exists(path), $"Missing generated asset {relativePath}.");
+            var (width, height, hasAlpha) = ReadPngHeader(path);
+            Assert.True(width > 0 && height > 0, relativePath);
+            Assert.True(hasAlpha, $"{relativePath} should preserve transparency.");
+        }
+    }
+
     private static (int Width, int Height, bool HasAlpha) ReadPngHeader(string path)
     {
         using var stream = File.OpenRead(path);
