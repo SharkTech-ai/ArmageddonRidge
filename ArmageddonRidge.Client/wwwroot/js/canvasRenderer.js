@@ -49,7 +49,7 @@ export function render(scene) {
     return getStats();
 }
 
-export async function playShot(scene, trail, explosions, screenShake, weaponId) {
+export async function playShot(scene, trail, explosions, screenShake, weaponId, options = {}) {
     if (!ctx || !trail?.length) {
         render(scene);
         return;
@@ -57,7 +57,12 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
 
     const shotScene = prepareScene(scene);
     shotInProgress = true;
-    const points = Array.from(trail);
+    const playbackOptions = options ?? {};
+    let points = Array.from(trail);
+    if (playbackOptions.intercepted && playbackOptions.interceptX !== undefined && playbackOptions.interceptY !== undefined) {
+        points = trimTrailToIntercept(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
+    }
+
     const stagedExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) >= 0);
     const finalExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) < 0);
     const stagedStarts = new Map();
@@ -100,6 +105,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
                 const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
                 drawScene(shotScene, shake, -shake * 0.4);
                 drawTrail(points, count, weaponId);
+                drawPatriotCountermeasure(shotScene, playbackOptions, pathProgress);
                 drawTriggeredExplosions(stagedExplosions, count, now, stagedStarts);
                 if (t < 1) {
                     requestAnimationFrame(tick);
@@ -110,6 +116,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId) 
                     try {
                         drawScene(shotScene, 0, 0);
                         drawTrail(points, points.length, weaponId);
+                        drawPatriotCountermeasure(shotScene, playbackOptions, 1);
                         drawTriggeredExplosions(stagedExplosions, points.length, performance.now(), stagedStarts);
                         finish();
                     } catch (error) {
@@ -129,6 +136,29 @@ export function getStats() {
     return { fps: Math.round(fps), frameMs, renderMs };
 }
 
+function trimTrailToIntercept(points, intercept) {
+    if (!points.length) {
+        return [intercept];
+    }
+
+    let bestIndex = 0;
+    let bestDistance = Number.MAX_VALUE;
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const dx = point.x - intercept.x;
+        const dy = point.y - intercept.y;
+        const distance = (dx * dx) + (dy * dy);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+        }
+    }
+
+    const trimmed = points.slice(0, Math.min(points.length, bestIndex + 1));
+    trimmed.push(intercept);
+    return trimmed;
+}
+
 function prepareScene(scene) {
     if (scene?.terrain?.length) {
         cachedTerrain = scene.terrain;
@@ -138,11 +168,27 @@ function prepareScene(scene) {
     return { ...scene, terrain: cachedTerrain ?? [] };
 }
 
-function drawScene(scene, offsetX, offsetY) {
-    const scaleX = canvas.width / scene.world.width;
-    const scaleY = canvas.height / scene.world.height;
+function clearCanvas() {
     ctx.save();
-    ctx.setTransform(scaleX, 0, 0, scaleY, offsetX, offsetY);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#102129";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+}
+
+function setWorldTransform(offsetX = 0, offsetY = 0, world = { width: 1200, height: 700 }) {
+    const worldWidth = Number(world?.width ?? 1200);
+    const worldHeight = Number(world?.height ?? 700);
+    const scale = Math.min(canvas.width / worldWidth, canvas.height / worldHeight);
+    const left = (canvas.width - (worldWidth * scale)) * 0.5;
+    const top = (canvas.height - (worldHeight * scale)) * 0.5;
+    ctx.setTransform(scale, 0, 0, scale, left + offsetX, top + offsetY);
+}
+
+function drawScene(scene, offsetX, offsetY) {
+    clearCanvas();
+    ctx.save();
+    setWorldTransform(offsetX, offsetY, scene.world);
     drawSky(scene);
     drawWeather(scene, false);
     drawRadiation(scene.radiation ?? []);
@@ -585,10 +631,16 @@ function drawTrail(points, count = points.length, weaponId) {
     }
 
     ctx.save();
-    ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
+    setWorldTransform();
     const visibleCount = Math.min(points.length, count);
     if (isDroneWeapon(weaponId)) {
         drawDroneSwarmTrail(points, visibleCount, weaponId);
+        ctx.restore();
+        return;
+    }
+
+    if (isDarkEagleWeapon(weaponId)) {
+        drawDarkEagleTrail(points, visibleCount);
         ctx.restore();
         return;
     }
@@ -647,6 +699,108 @@ function drawSmokeTrail(points, count, weaponId) {
     }
 }
 
+function drawDarkEagleTrail(points, count) {
+    const visibleCount = Math.min(points.length, count);
+    if (visibleCount <= 0) {
+        return;
+    }
+
+    const start = Math.max(0, visibleCount - 150);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(7, 10, 13, 0.62)";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    for (let index = start; index < visibleCount; index++) {
+        const point = points[index];
+        if (index === start) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255, 237, 127, 0.92)";
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    for (let index = start; index < visibleCount; index++) {
+        const point = points[index];
+        if (index === start) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+
+    const smokeStep = Math.max(2, Math.floor(visibleCount / 34));
+    for (let i = start; i < visibleCount; i += smokeStep) {
+        const point = points[i];
+        const age = (visibleCount - i) / Math.max(1, visibleCount - start);
+        const size = 5 + age * 18;
+        ctx.fillStyle = `rgba(42, 45, 47, ${0.2 * age})`;
+        ctx.beginPath();
+        ctx.arc(point.x + ((hash2d(i, visibleCount) % 11) - 5), point.y + Math.sin(i * 0.31) * 5, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const last = points[visibleCount - 1];
+    const prev = points[Math.max(0, visibleCount - 5)];
+    drawFlameTip(last, prev, true);
+    drawOrientedSprite("missile", last.x, last.y, 58, 22, Math.atan2(last.y - prev.y, last.x - prev.x));
+}
+
+function drawPatriotCountermeasure(scene, options, pathProgress) {
+    if (!options?.intercepted || options.interceptX === undefined || options.interceptY === undefined) {
+        return;
+    }
+
+    const incomingOwner = String(options.ownerTankId ?? "");
+    const playerTank = scene.player;
+    const cpuTank = scene.cpu;
+    const launcher = incomingOwner === String(playerTank?.id ?? "") ? cpuTank : playerTank;
+    if (!launcher) {
+        return;
+    }
+
+    const launchProgress = clamp((pathProgress - 0.32) / 0.42, 0, 1);
+    if (launchProgress <= 0) {
+        return;
+    }
+
+    const startX = launcher.x + (launcher.isCpu ? -28 : 28);
+    const startY = launcher.y - 46;
+    const endX = Number(options.interceptX);
+    const endY = Number(options.interceptY);
+    const eased = 1 - Math.pow(1 - launchProgress, 2.2);
+    const x = startX + ((endX - startX) * eased);
+    const y = startY + ((endY - startY) * eased) - Math.sin(launchProgress * Math.PI) * 44;
+    const angle = Math.atan2(endY - startY, endX - startX);
+
+    ctx.save();
+    setWorldTransform();
+    ctx.strokeStyle = `rgba(121, 214, 255, ${0.25 + launchProgress * 0.55})`;
+    ctx.lineWidth = 4;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const glow = ctx.createRadialGradient(x, y, 1, x, y, 28);
+    glow.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+    glow.addColorStop(0.45, "rgba(121, 214, 255, 0.55)");
+    glow.addColorStop(1, "rgba(121, 214, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, 28, 0, Math.PI * 2);
+    ctx.fill();
+    drawOrientedSprite("missile", x, y, 42, 16, angle);
+    ctx.restore();
+}
+
 function drawDroneSwarmTrail(points, count, weaponId) {
     const droneCount = 5;
     const visibleCount = Math.min(points.length, count);
@@ -659,10 +813,11 @@ function drawDroneSwarmTrail(points, count, weaponId) {
         const headIndex = Math.max(0, visibleCount - 1 - lag);
         const startIndex = Math.max(0, headIndex - 92);
         const phase = drone * 1.73;
+        const spin = droneSpinDirection(drone, points.length);
         ctx.fillStyle = drone % 2 === 0 ? "rgba(255, 231, 139, 0.7)" : "rgba(126, 226, 213, 0.62)";
 
         for (let i = startIndex; i <= headIndex; i += 6) {
-            const point = dronePoint(points, i, drone, phase);
+            const point = dronePoint(points, i, drone, phase, spin);
             const age = (headIndex - i) / Math.max(1, headIndex - startIndex);
             const alpha = Math.max(0.12, 0.52 * (1 - age));
             ctx.fillStyle = `rgba(255, 231, 139, ${alpha})`;
@@ -671,15 +826,18 @@ function drawDroneSwarmTrail(points, count, weaponId) {
             ctx.fill();
         }
 
-        const head = dronePoint(points, headIndex, drone, phase);
+        const head = dronePoint(points, headIndex, drone, phase, spin);
         const tailIndex = Math.max(0, headIndex - 5);
-        const tail = dronePoint(points, tailIndex, drone, phase);
-        const angle = Math.atan2(head.y - tail.y, head.x - tail.x) + Math.sin((headIndex * 0.24) + phase) * 0.42;
+        const tail = dronePoint(points, tailIndex, drone, phase, spin);
+        const baseAngle = Math.atan2(head.y - tail.y, head.x - tail.x);
+        const wobbleAngle = Math.sin((headIndex * (0.13 + drone * 0.025) * spin) + phase) * 0.85;
+        const tumbleAngle = Math.cos((headIndex * (0.07 + drone * 0.018) * -spin) + phase * 1.7) * 0.42;
+        const angle = baseAngle + wobbleAngle + tumbleAngle;
         drawShahedDrone(head.x, head.y, angle, weaponId, 1 + (drone % 3) * 0.06);
     }
 }
 
-function dronePoint(points, index, drone, phase) {
+function dronePoint(points, index, drone, phase, spin) {
     const point = points[index];
     const prev = points[Math.max(0, index - 3)] ?? point;
     const next = points[Math.min(points.length - 1, index + 3)] ?? point;
@@ -691,13 +849,19 @@ function dronePoint(points, index, drone, phase) {
     const normalX = -tangentY;
     const normalY = tangentX;
     const lane = drone - 2;
-    const swirl = Math.sin((index * 0.34) + phase) * (9 + (drone % 3) * 2.5);
-    const corkscrew = Math.cos((index * 0.27) + phase) * 5;
-    const offset = (lane * 9) + swirl;
+    const wanderRate = (0.17 + (drone * 0.033)) * spin;
+    const counterRate = (0.11 + (drone * 0.021)) * -spin;
+    const swirl = Math.sin((index * wanderRate) + phase) * (12 + (drone % 3) * 3.5);
+    const corkscrew = Math.cos((index * counterRate) + phase * 1.9) * (7 + (drone % 2) * 3);
+    const offset = (lane * 8) + swirl + Math.sin(index * 0.045 + phase * 2.2) * 5;
     return {
         x: point.x + (normalX * offset) + (tangentX * corkscrew),
         y: point.y + (normalY * offset) + (tangentY * corkscrew)
     };
+}
+
+function droneSpinDirection(drone, seed) {
+    return (hash2d(drone + 11, seed + 37) % 2) === 0 ? 1 : -1;
 }
 
 function drawShahedDrone(x, y, angle, weaponId, scale = 1) {
@@ -854,7 +1018,7 @@ function animateExplosions(scene, explosions, screenShake) {
 
 function drawExplosions(explosions, progress = 1) {
     ctx.save();
-    ctx.setTransform(canvas.width / 1200, 0, 0, canvas.height / 700, 0, 0);
+    setWorldTransform();
     for (const explosion of explosions) {
         const radius = explosion.radius ?? 32;
         const lava = isLavaExplosion(explosion);
@@ -1005,7 +1169,7 @@ function isDarkEagleWeapon(weaponId) {
 
 function shotDuration(pointCount, weaponId) {
     if (isDarkEagleWeapon(weaponId)) {
-        return 2300;
+        return 2900;
     }
 
     if (isDroneWeapon(weaponId)) {
@@ -1025,11 +1189,11 @@ function shotPathProgress(t, weaponId) {
 }
 
 function darkEagleFlightProgress(t) {
-    if (t < 0.72) {
-        return Math.pow(t / 0.72, 0.84) * 0.5;
+    if (t < 0.64) {
+        return (1 - Math.pow(1 - (t / 0.64), 2.1)) * 0.48;
     }
 
-    return 0.5 + (Math.pow((t - 0.72) / 0.28, 1.65) * 0.5);
+    return 0.48 + (Math.pow((t - 0.64) / 0.36, 1.9) * 0.52);
 }
 
 function isMopWeapon(weaponId) {

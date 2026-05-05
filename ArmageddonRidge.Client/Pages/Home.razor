@@ -65,6 +65,7 @@
                         <div class="round-chip">
                             <span>Round @_state.RoundNumber</span>
                             <strong>@_state.Phase</strong>
+                            <small class="round-wind">@WindText</small>
                         </div>
 
                         <div class="versus-health cpu @(_cpuHurt ? "is-hurt" : "")">
@@ -184,6 +185,10 @@
                 <span>SFX volume</span>
                 <input type="range" min="0" max="1" step="0.05" @bind="_sfxVolume" @bind:event="oninput" @onchange="ApplyAudioSettingsAsync" />
             </label>
+            <label class="settings-row money-row">
+                <span>Starting cash</span>
+                <input type="number" min="500" max="10000" step="250" value="@_startingCash" @onchange="HandleStartingCashChangedAsync" />
+            </label>
         </div>
     }
 </section>
@@ -200,6 +205,7 @@
     private bool _screenShake = true;
     private bool _reducedMotion;
     private float _sfxVolume = 0.9f;
+    private int _startingCash = GameConstants.StartingCash;
     private int _fps = 60;
     private double _frameMs = 16.7;
     private double _renderMs;
@@ -241,6 +247,7 @@
                 _sfxVolume = save.Settings.SfxVolume;
                 _screenShake = save.Settings.ScreenShake;
                 _reducedMotion = save.Settings.ReducedMotion;
+                _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
                 await Audio.SetVolumeAsync(_sfxVolume);
                 StateHasChanged();
             }
@@ -255,7 +262,7 @@
 
     private async Task NewDuelAsync()
     {
-        _settings = new MatchSettings(Difficulty: _difficulty, TerrainSeed: Random.Shared.Next(10_000, 99_999));
+        _settings = new MatchSettings(Difficulty: _difficulty, StartingCash: _startingCash, TerrainSeed: Random.Shared.Next(10_000, 99_999));
         _state = Engine.NewMatch(_settings);
         ResetRenderCache();
         await Audio.UnlockAsync();
@@ -583,6 +590,15 @@
         await PersistSaveAsync();
     }
 
+    private async Task HandleStartingCashChangedAsync(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var cash))
+        {
+            _startingCash = Math.Clamp(cash, 500, 10_000);
+            await PersistSaveAsync();
+        }
+    }
+
     private async Task PersistSaveAsync()
     {
         var cash = _state?.PlayerTank.Cash ?? 0;
@@ -593,7 +609,7 @@
             _state?.PlayerTank.IsDestroyed == true ? 1 : 0,
             Weapons.All.Select(static weapon => weapon.Id).ToArray(),
             _state?.SelectedWeaponId ?? WeaponIds.PeaShell,
-            new GameSettings(SfxVolume: _sfxVolume, ScreenShake: _screenShake, ReducedMotion: _reducedMotion, Difficulty: _difficulty));
+            new GameSettings(SfxVolume: _sfxVolume, ScreenShake: _screenShake, ReducedMotion: _reducedMotion, Difficulty: _difficulty, StartingCash: _startingCash));
         await Storage.SetAsync("armageddon-ridge-save", save);
     }
 

@@ -6,8 +6,12 @@ namespace ArmageddonRidge.Core.Game;
 public static class PatriotDefense
 {
     private const float ThreatPadding = GameConstants.TankWidth * 0.65f;
+    private const float TrailEnvelope = 130f;
 
-    public static bool ShouldIntercept(Tank protectedTank, IReadOnlyList<ExplosionResult> projectedExplosions)
+    public static bool ShouldIntercept(Tank protectedTank, IReadOnlyList<ExplosionResult> projectedExplosions) =>
+        ShouldIntercept(protectedTank, projectedExplosions, []);
+
+    public static bool ShouldIntercept(Tank protectedTank, IReadOnlyList<ExplosionResult> projectedExplosions, IReadOnlyList<Vector2> trail)
     {
         for (var i = 0; i < projectedExplosions.Count; i++)
         {
@@ -19,6 +23,16 @@ public static class PatriotDefense
             }
 
             if (Vector2.DistanceSquared(protectedTank.Center, explosion.Center) <= radius * radius)
+            {
+                return true;
+            }
+        }
+
+        var envelopeSquared = TrailEnvelope * TrailEnvelope;
+        var step = Math.Max(1, trail.Count / 40);
+        for (var i = 0; i < trail.Count; i += step)
+        {
+            if (Vector2.DistanceSquared(protectedTank.Center, trail[i]) <= envelopeSquared)
             {
                 return true;
             }

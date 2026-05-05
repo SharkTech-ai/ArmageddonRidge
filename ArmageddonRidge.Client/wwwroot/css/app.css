@@ -451,6 +451,14 @@ select {
     line-height: 1;
 }
 
+.round-wind {
+    display: block;
+    color: #d7f7ff;
+    font-size: 0.68rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
 .battle-hud.hurt-flash::before {
     position: fixed;
     inset: 0;
@@ -659,6 +667,20 @@ select {
 
 .range-row {
     grid-template-columns: 112px minmax(150px, 1fr);
+}
+
+.money-row {
+    grid-template-columns: 132px minmax(120px, 1fr);
+}
+
+.money-row input[type="number"] {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #10161c;
+    color: var(--text);
+    padding: 0 10px;
 }
 
 .benchmark-page {

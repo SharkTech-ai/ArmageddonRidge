@@ -23,4 +23,5 @@ public sealed record GameSettings(
     bool ReducedMotion = false,
     bool ShowTutorialHints = true,
     bool EnableNuclearWeapons = true,
-    Difficulty Difficulty = Difficulty.Normal);
+    Difficulty Difficulty = Difficulty.Normal,
+    int StartingCash = GameConstants.StartingCash);

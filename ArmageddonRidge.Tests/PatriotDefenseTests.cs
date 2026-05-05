@@ -32,6 +32,25 @@ public sealed class PatriotDefenseTests
     }
 
     [Fact]
+    public void PatriotDefenseInterceptsDangerousIncomingTrail()
+    {
+        var tank = Tank("player", 300, 500);
+        var projected = new[]
+        {
+            new ExplosionResult(new Vector2(700, 475), 35, 30, 0, 0, false, false, [], ShotVisualKind.Missile)
+        };
+        var trail = new[]
+        {
+            new Vector2(900, 260),
+            new Vector2(520, 330),
+            new Vector2(320, 430),
+            new Vector2(700, 475)
+        };
+
+        Assert.True(PatriotDefense.ShouldIntercept(tank, projected, trail));
+    }
+
+    [Fact]
     public void PatriotDefenseChoosesClosestTrailPointAsInterceptPoint()
     {
         var tank = Tank("player", 300, 500);

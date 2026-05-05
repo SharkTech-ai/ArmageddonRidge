@@ -31,7 +31,15 @@ public sealed class CanvasRenderer : IAsyncDisposable
         return await _module.InvokeAsync<RenderStats>("render", scene);
     }
 
-    public async ValueTask PlayShotAsync(object scene, IReadOnlyList<Vector2> trail, IReadOnlyList<ExplosionResult> explosions, bool screenShake, string? weaponId = null)
+    public async ValueTask PlayShotAsync(
+        object scene,
+        IReadOnlyList<Vector2> trail,
+        IReadOnlyList<ExplosionResult> explosions,
+        bool screenShake,
+        string? weaponId = null,
+        bool intercepted = false,
+        Vector2? interceptPoint = null,
+        string? ownerTankId = null)
     {
         if (_module is null)
         {
@@ -60,11 +68,18 @@ public sealed class CanvasRenderer : IAsyncDisposable
                 triggerIndex = explosion.TriggerTrailIndex
             }),
             screenShake,
-            weaponId);
+            weaponId,
+            new
+            {
+                intercepted,
+                interceptX = interceptPoint?.X,
+                interceptY = interceptPoint?.Y,
+                ownerTankId
+            });
     }
 
     public ValueTask PlayShotAsync(object scene, ShotResolution resolution, bool screenShake) =>
-        PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId);
+        PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId);
 
     public async ValueTask<RenderStats?> GetStatsAsync()
     {

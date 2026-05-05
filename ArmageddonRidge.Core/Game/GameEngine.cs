@@ -135,7 +135,7 @@ public sealed class GameEngine
         int touched;
         if (owner.IsCpu
             && opponent.Upgrades.Contains(UpgradeType.PatriotBattery)
-            && PatriotDefense.ShouldIntercept(opponent, simulation.Explosions))
+            && PatriotDefense.ShouldIntercept(opponent, simulation.Explosions, simulation.Trail))
         {
             intercepted = true;
             interceptPoint = PatriotDefense.InterceptPoint(opponent, simulation.Trail);
@@ -258,14 +258,18 @@ public sealed class GameEngine
             return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [], VisualKindFor(weapon))]);
         }
 
+        var droneSwarm = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm;
+        var droneRandom = droneSwarm ? new Random(ShotSeed(state, owner, weapon)) : null;
         var explosions = new List<ExplosionResult>();
-        var count = Math.Max(weapon.ClusterCount, 3);
+        var count = droneSwarm ? droneRandom!.Next(3, Math.Max(4, weapon.ClusterCount + 1)) : Math.Max(weapon.ClusterCount, 3);
         for (var i = 0; i < count; i++)
         {
-            var spacing = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm ? 28f : 20f;
+            var spacing = droneSwarm ? 26f : 20f;
             var offset = (i - ((count - 1) / 2f)) * spacing;
-            var wave = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm ? ((i % 2) == 0 ? -10f : 6f) : 0f;
-            var center = primary.ImpactPoint + new Vector2(offset, (-MathF.Abs(offset) * 0.25f) + wave);
+            var wave = droneSwarm ? ((i % 2) == 0 ? -10f : 6f) : 0f;
+            var chaosX = droneSwarm ? droneRandom!.NextSingle() * 58f - 29f : 0f;
+            var chaosY = droneSwarm ? droneRandom!.NextSingle() * 42f - 18f : 0f;
+            var center = primary.ImpactPoint + new Vector2(offset + chaosX, (-MathF.Abs(offset) * 0.25f) + wave + chaosY);
             explosions.Add(new ExplosionResult(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], VisualKindFor(weapon)));
         }
 
@@ -395,6 +399,23 @@ public sealed class GameEngine
     {
         var radians = tank.TurretAngle * (MathF.PI / 180f);
         return ClampToWorld(tank.Center + new Vector2(MathF.Cos(radians) * 32f, -MathF.Sin(radians) * 32f));
+    }
+
+    private static int ShotSeed(GameState state, Tank owner, WeaponDefinition weapon)
+    {
+        unchecked
+        {
+            var hash = state.RandomSeed;
+            hash = (hash * 397) ^ state.RoundNumber;
+            hash = (hash * 397) ^ state.ShotsFired;
+            hash = (hash * 397) ^ (owner.IsCpu ? 17 : 31);
+            for (var i = 0; i < weapon.Id.Length; i++)
+            {
+                hash = (hash * 33) ^ weapon.Id[i];
+            }
+
+            return hash;
+        }
     }
 
     private static Tank CreateTank(string id, string name, bool isCpu, float x, TerrainMask terrain, float angle)
