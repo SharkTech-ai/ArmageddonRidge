@@ -1,7 +1,13 @@
 namespace ArmageddonRidge.Core.Terrain;
 
+/// <summary>
+/// Generates deterministic artillery terrain from a numeric seed.
+/// </summary>
 public sealed class TerrainGenerator
 {
+    /// <summary>
+    /// Creates a full-width heightmap with broad hills and smaller sinusoidal detail.
+    /// </summary>
     public TerrainMask Generate(int seed, int width = GameConstants.WorldWidth, int height = GameConstants.WorldHeight)
     {
         var rng = new Random(seed);

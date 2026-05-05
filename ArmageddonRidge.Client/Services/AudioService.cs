@@ -2,22 +2,34 @@ using Microsoft.JSInterop;
 
 namespace ArmageddonRidge.Client.Services;
 
+/// <summary>
+/// Blazor wrapper around the generated WebAudio sound-effect engine.
+/// </summary>
 public sealed class AudioService : IAsyncDisposable
 {
     private readonly IJSRuntime _js;
     private IJSObjectReference? _module;
 
+    /// <summary>
+    /// Creates an audio service using the browser JavaScript runtime.
+    /// </summary>
     public AudioService(IJSRuntime js)
     {
         _js = js;
     }
 
+    /// <summary>
+    /// Imports and initializes the browser audio module.
+    /// </summary>
     public async ValueTask InitializeAsync()
     {
         _module ??= await _js.InvokeAsync<IJSObjectReference>("import", "./js/audioEngine.js");
         await _module.InvokeVoidAsync("initialize");
     }
 
+    /// <summary>
+    /// Unlocks audio playback after a user gesture.
+    /// </summary>
     public async ValueTask UnlockAsync()
     {
         if (_module is not null)
@@ -26,6 +38,9 @@ public sealed class AudioService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Plays a named generated sound effect when audio is initialized.
+    /// </summary>
     public async ValueTask PlayAsync(string sound)
     {
         if (_module is not null)
@@ -34,6 +49,9 @@ public sealed class AudioService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Sets the master sound-effect volume.
+    /// </summary>
     public async ValueTask SetVolumeAsync(float volume)
     {
         if (_module is not null)
@@ -42,6 +60,9 @@ public sealed class AudioService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Releases the imported JavaScript module.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_module is not null)

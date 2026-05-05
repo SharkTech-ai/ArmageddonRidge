@@ -3,17 +3,26 @@ using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Game;
 
+/// <summary>
+/// Applies shop purchases and end-of-round cash rewards.
+/// </summary>
 public sealed class EconomyService
 {
     private readonly WeaponCatalog _weapons;
     private readonly UpgradeCatalog _upgrades;
 
+    /// <summary>
+    /// Creates an economy service backed by the active content catalogs.
+    /// </summary>
     public EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrades)
     {
         _weapons = weapons;
         _upgrades = upgrades;
     }
 
+    /// <summary>
+    /// Attempts to buy one or more copies of a weapon for a tank.
+    /// </summary>
     public bool BuyWeapon(Tank tank, string weaponId, int count = 1)
     {
         var weapon = _weapons.Get(weaponId);
@@ -28,6 +37,9 @@ public sealed class EconomyService
         return true;
     }
 
+    /// <summary>
+    /// Attempts to buy and immediately apply a defensive or utility upgrade.
+    /// </summary>
     public bool BuyUpgrade(Tank tank, UpgradeType upgradeType)
     {
         var upgrade = _upgrades.Get(upgradeType);
@@ -61,6 +73,9 @@ public sealed class EconomyService
         return true;
     }
 
+    /// <summary>
+    /// Awards player cash for the completed round and accumulated damage.
+    /// </summary>
     public void AwardRound(GameState state, TurnOwner winner)
     {
         var playerWon = winner == TurnOwner.Player;

@@ -8,6 +8,9 @@ using ArmageddonRidge.Core.Terrain;
 
 namespace ArmageddonRidge.Core.Game;
 
+/// <summary>
+/// Coordinates deterministic match setup, shot resolution, turns, economy, and round progression.
+/// </summary>
 public sealed class GameEngine
 {
     private readonly TerrainGenerator _terrainGenerator = new();
@@ -15,6 +18,9 @@ public sealed class GameEngine
     private readonly ProjectileSimulator _projectileSimulator = new();
     private readonly ExplosionService _explosionService = new();
 
+    /// <summary>
+    /// Creates a game engine from the active content catalogs.
+    /// </summary>
     public GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     {
         Weapons = weapons;
@@ -23,14 +29,29 @@ public sealed class GameEngine
         Cpu = new CpuOpponent(weapons, _projectileSimulator);
     }
 
+    /// <summary>
+    /// Gets the weapon catalog used by this engine.
+    /// </summary>
     public WeaponCatalog Weapons { get; }
 
+    /// <summary>
+    /// Gets the upgrade catalog used by this engine.
+    /// </summary>
     public UpgradeCatalog Upgrades { get; }
 
+    /// <summary>
+    /// Gets the economy service for shop purchases and rewards.
+    /// </summary>
     public EconomyService Economy { get; }
 
+    /// <summary>
+    /// Gets the CPU planner used for CPU-controlled turns.
+    /// </summary>
     public CpuOpponent Cpu { get; }
 
+    /// <summary>
+    /// Creates a new deterministic match from player-selected settings.
+    /// </summary>
     public GameState NewMatch(MatchSettings settings)
     {
         var seed = settings.TerrainSeed ?? Random.Shared.Next(100_000, 999_999);
@@ -61,6 +82,9 @@ public sealed class GameEngine
         return state;
     }
 
+    /// <summary>
+    /// Leaves the shop and begins a battle round.
+    /// </summary>
     public void StartBattle(GameState state)
     {
         state.Phase = GamePhase.Battle;
@@ -69,6 +93,9 @@ public sealed class GameEngine
         ApplyStartOfTurnEffects(state);
     }
 
+    /// <summary>
+    /// Regenerates terrain and prepares the next round while preserving player progression.
+    /// </summary>
     public void StartNextRound(GameState state, MatchSettings settings)
     {
         var seed = state.RandomSeed + (state.RoundNumber * 7919);
@@ -92,6 +119,9 @@ public sealed class GameEngine
         state.EventLog.Add($"Round {state.RoundNumber}. New ridge. Same grudge.");
     }
 
+    /// <summary>
+    /// Fires the current turn's weapon and fully resolves projectile, explosions, terrain, and turn handoff.
+    /// </summary>
     public ShotResolution FireCurrentTurn(GameState state, MatchSettings settings, float? angle = null, int? power = null)
     {
         if (state.Phase != GamePhase.Battle)
@@ -204,10 +234,19 @@ public sealed class GameEngine
         return new ShotResolution(weapon.Id, owner.Id, simulation.Trail, resolvedExplosions, events, winner is not null, winner, perf, VisualKindFor(weapon), intercepted, interceptPoint);
     }
 
+    /// <summary>
+    /// Attempts to buy a weapon for the player tank.
+    /// </summary>
     public bool BuyWeapon(GameState state, string weaponId, int count = 1) => Economy.BuyWeapon(state.PlayerTank, weaponId, count);
 
+    /// <summary>
+    /// Attempts to buy and apply an upgrade for the player tank.
+    /// </summary>
     public bool BuyUpgrade(GameState state, UpgradeType upgradeType) => Economy.BuyUpgrade(state.PlayerTank, upgradeType);
 
+    /// <summary>
+    /// Produces the approximate player shot preview used by the targeting computer.
+    /// </summary>
     public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, float angle, int power)
     {
         if (state.Phase != GamePhase.Battle || state.CurrentTurn != TurnOwner.Player)

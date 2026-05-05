@@ -3,8 +3,14 @@ using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Physics;
 
+/// <summary>
+/// Applies blast falloff, shield absorption, and lingering hazard creation.
+/// </summary>
 public sealed class ExplosionService
 {
+    /// <summary>
+    /// Resolves one explosion against the owner and opponent, mutating tank health and shields.
+    /// </summary>
     public ExplosionResult Resolve(
         WeaponDefinition weapon,
         Vector2 center,
@@ -38,6 +44,9 @@ public sealed class ExplosionService
             resolvedVisualKind);
     }
 
+    /// <summary>
+    /// Applies active radiation or lava zones to a tank and returns total raw damage.
+    /// </summary>
     public float ApplyRadiation(Tank tank, List<RadiationZone> zones)
     {
         var total = 0f;
@@ -53,6 +62,9 @@ public sealed class ExplosionService
         return total;
     }
 
+    /// <summary>
+    /// Advances lingering zones by one turn and removes expired zones.
+    /// </summary>
     public void TickRadiation(List<RadiationZone> zones)
     {
         for (var i = zones.Count - 1; i >= 0; i--)

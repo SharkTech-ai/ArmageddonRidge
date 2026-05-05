@@ -2,10 +2,16 @@ using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Content;
 
+/// <summary>
+/// Read-only catalog of built-in weapon definitions.
+/// </summary>
 public sealed class WeaponCatalog
 {
     private readonly IReadOnlyDictionary<string, WeaponDefinition> _weapons;
 
+    /// <summary>
+    /// Creates the default MVP weapon catalog.
+    /// </summary>
     public WeaponCatalog()
     {
         var weapons = new[]
@@ -31,8 +37,14 @@ public sealed class WeaponCatalog
         _weapons = weapons.ToDictionary(static weapon => weapon.Id, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Gets all available weapon definitions.
+    /// </summary>
     public IReadOnlyCollection<WeaponDefinition> All => _weapons.Values.ToArray();
 
+    /// <summary>
+    /// Gets a weapon definition by stable identifier.
+    /// </summary>
     public WeaponDefinition Get(string id) => _weapons.TryGetValue(id, out var weapon)
         ? weapon
         : throw new KeyNotFoundException($"Unknown weapon '{id}'.");

@@ -2,10 +2,16 @@ using System.Numerics;
 
 namespace ArmageddonRidge.Core.Terrain;
 
+/// <summary>
+/// Heightmap-backed terrain mask used for collision, deformation, and rendering snapshots.
+/// </summary>
 public sealed class TerrainMask
 {
     private readonly float[] _solidTop;
 
+    /// <summary>
+    /// Creates a terrain mask from one surface height per world column.
+    /// </summary>
     public TerrainMask(int width, int height, IReadOnlyList<float> solidTop)
     {
         Width = width;
@@ -18,12 +24,24 @@ public sealed class TerrainMask
         _solidTop = solidTop.ToArray();
     }
 
+    /// <summary>
+    /// Gets the world width in terrain columns.
+    /// </summary>
     public int Width { get; }
 
+    /// <summary>
+    /// Gets the world height used for bounds checks.
+    /// </summary>
     public int Height { get; }
 
+    /// <summary>
+    /// Gets the topmost solid Y value for each terrain column.
+    /// </summary>
     public IReadOnlyList<float> SolidTop => _solidTop;
 
+    /// <summary>
+    /// Copies terrain heights from another mask with matching dimensions.
+    /// </summary>
     public void CopyFrom(TerrainMask source)
     {
         if (source.Width != Width || source.Height != Height)
@@ -37,12 +55,18 @@ public sealed class TerrainMask
         }
     }
 
+    /// <summary>
+    /// Gets the solid surface Y coordinate for a world X coordinate.
+    /// </summary>
     public float GetSurfaceY(float x)
     {
         var ix = Math.Clamp((int)MathF.Round(x), 0, Width - 1);
         return _solidTop[ix];
     }
 
+    /// <summary>
+    /// Finds the nearest non-empty surface column to a preferred X coordinate.
+    /// </summary>
     public bool TryGetNearestVisibleSurface(float preferredX, out Vector2 surface)
     {
         var preferredIndex = Math.Clamp((int)MathF.Round(preferredX), 0, Width - 1);
@@ -67,8 +91,14 @@ public sealed class TerrainMask
         return false;
     }
 
+    /// <summary>
+    /// Returns whether a world point is inside solid terrain.
+    /// </summary>
     public bool IsSolid(Vector2 point) => IsSolid(point.X, point.Y);
 
+    /// <summary>
+    /// Returns whether a world coordinate is inside solid terrain.
+    /// </summary>
     public bool IsSolid(float x, float y)
     {
         if (x < 0 || x >= Width || y < 0 || y >= Height)
@@ -81,6 +111,9 @@ public sealed class TerrainMask
 
     private bool IsVisibleSurfaceColumn(int x) => x >= 0 && x < Width && _solidTop[x] < Height;
 
+    /// <summary>
+    /// Removes a circular crater from the heightmap and returns touched column count.
+    /// </summary>
     public int RemoveCircle(Vector2 center, float radius)
     {
         var touched = 0;
@@ -108,6 +141,9 @@ public sealed class TerrainMask
         return touched;
     }
 
+    /// <summary>
+    /// Adds a circular dirt mound to the heightmap and returns touched column count.
+    /// </summary>
     public int AddCircle(Vector2 center, float radius)
     {
         var touched = 0;

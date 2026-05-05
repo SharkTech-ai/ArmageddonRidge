@@ -4,8 +4,14 @@ using ArmageddonRidge.Core.Terrain;
 
 namespace ArmageddonRidge.Core.Physics;
 
+/// <summary>
+/// Deterministic fixed-step projectile simulator used by both live shots and CPU planning.
+/// </summary>
 public sealed class ProjectileSimulator
 {
+    /// <summary>
+    /// Simulates a projectile and captures a renderer-friendly trail.
+    /// </summary>
     public ProjectileSimulation Simulate(
         TerrainMask terrain,
         Tank owner,
@@ -25,6 +31,9 @@ public sealed class ProjectileSimulator
             result.NearestOwnerDistance);
     }
 
+    /// <summary>
+    /// Simulates a projectile without allocating a full trail for AI candidate scoring.
+    /// </summary>
     public ProjectilePlanningSimulation SimulateForPlanning(
         TerrainMask terrain,
         Tank owner,
@@ -236,6 +245,9 @@ internal readonly record struct Hitbox(float Left, float Right, float Top, float
     public Hitbox Expand(float amount) => new(Left - amount, Right + amount, Top - amount, Bottom + amount);
 }
 
+/// <summary>
+/// Reason a projectile simulation stopped.
+/// </summary>
 public enum ProjectileStopReason
 {
     TerrainHit,
@@ -245,6 +257,14 @@ public enum ProjectileStopReason
     Expired
 }
 
+/// <summary>
+/// Full projectile simulation result including the visible sampled trail.
+/// </summary>
+/// <param name="Trail">Sampled world-space path points for rendering.</param>
+/// <param name="ImpactPoint">Final point where the projectile stopped.</param>
+/// <param name="StopReason">Reason the simulation stopped.</param>
+/// <param name="NearestOpponentDistance">Nearest distance from the path to the opponent center.</param>
+/// <param name="NearestOwnerDistance">Nearest distance from the path to the owner center.</param>
 public sealed record ProjectileSimulation(
     IReadOnlyList<Vector2> Trail,
     Vector2 ImpactPoint,
@@ -252,6 +272,13 @@ public sealed record ProjectileSimulation(
     float NearestOpponentDistance,
     float NearestOwnerDistance);
 
+/// <summary>
+/// Allocation-light simulation result used by CPU planning.
+/// </summary>
+/// <param name="ImpactPoint">Final point where the projectile stopped.</param>
+/// <param name="StopReason">Reason the simulation stopped.</param>
+/// <param name="NearestOpponentDistance">Nearest distance from the path to the opponent center.</param>
+/// <param name="NearestOwnerDistance">Nearest distance from the path to the owner center.</param>
 public readonly record struct ProjectilePlanningSimulation(
     Vector2 ImpactPoint,
     ProjectileStopReason StopReason,

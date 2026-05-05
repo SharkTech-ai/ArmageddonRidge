@@ -6,17 +6,26 @@ using ArmageddonRidge.Core.Physics;
 
 namespace ArmageddonRidge.Core.AI;
 
+/// <summary>
+/// Deterministic CPU planner that scores simulated shots for the current difficulty.
+/// </summary>
 public sealed class CpuOpponent
 {
     private readonly WeaponCatalog _weapons;
     private readonly ProjectileSimulator _simulator;
 
+    /// <summary>
+    /// Creates a CPU opponent using the shared weapon catalog and projectile simulator.
+    /// </summary>
     public CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simulator)
     {
         _weapons = weapons;
         _simulator = simulator;
     }
 
+    /// <summary>
+    /// Chooses the CPU weapon, angle, and power for the current turn.
+    /// </summary>
     public CpuShotPlan PlanShot(GameState state, MatchSettings settings)
     {
         var watch = Stopwatch.StartNew();
@@ -150,6 +159,15 @@ public sealed class CpuOpponent
     }
 }
 
+/// <summary>
+/// Selected CPU shot and planning metadata.
+/// </summary>
+/// <param name="WeaponId">Weapon identifier to fire.</param>
+/// <param name="Angle">Chosen turret angle in degrees.</param>
+/// <param name="Power">Chosen shot power.</param>
+/// <param name="Taunt">Optional CPU taunt to show with the shot.</param>
+/// <param name="Score">Internal candidate score used for comparisons.</param>
+/// <param name="PlanningMs">Elapsed planning time in milliseconds.</param>
 public sealed record CpuShotPlan(string WeaponId, float Angle, int Power, string Taunt, float Score, double PlanningMs);
 
 internal sealed record CpuDifficultyProfile(

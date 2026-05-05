@@ -2,10 +2,16 @@ using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Content;
 
+/// <summary>
+/// Read-only catalog of built-in defensive and utility upgrades.
+/// </summary>
 public sealed class UpgradeCatalog
 {
     private readonly IReadOnlyDictionary<UpgradeType, UpgradeDefinition> _upgrades;
 
+    /// <summary>
+    /// Creates the default MVP upgrade catalog.
+    /// </summary>
     public UpgradeCatalog()
     {
         var upgrades = new[]
@@ -26,7 +32,13 @@ public sealed class UpgradeCatalog
         _upgrades = upgrades.ToDictionary(static upgrade => upgrade.Type);
     }
 
+    /// <summary>
+    /// Gets all available upgrade definitions.
+    /// </summary>
     public IReadOnlyCollection<UpgradeDefinition> All => _upgrades.Values.ToArray();
 
+    /// <summary>
+    /// Gets an upgrade definition by stable identifier.
+    /// </summary>
     public UpgradeDefinition Get(UpgradeType type) => _upgrades[type];
 }

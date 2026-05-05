@@ -3,14 +3,23 @@ using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Game;
 
+/// <summary>
+/// Heuristics for deciding when the single-use Patriot Battery should intercept a CPU shot.
+/// </summary>
 public static class PatriotDefense
 {
     private const float ThreatPadding = GameConstants.TankWidth * 0.65f;
     private const float TrailEnvelope = 190f;
 
+    /// <summary>
+    /// Determines whether projected explosions alone threaten the protected tank.
+    /// </summary>
     public static bool ShouldIntercept(Tank protectedTank, IReadOnlyList<ExplosionResult> projectedExplosions) =>
         ShouldIntercept(protectedTank, projectedExplosions, []);
 
+    /// <summary>
+    /// Determines whether projected explosions or the incoming trail threaten the protected tank.
+    /// </summary>
     public static bool ShouldIntercept(Tank protectedTank, IReadOnlyList<ExplosionResult> projectedExplosions, IReadOnlyList<Vector2> trail)
     {
         for (var i = 0; i < projectedExplosions.Count; i++)
@@ -41,6 +50,9 @@ public static class PatriotDefense
         return false;
     }
 
+    /// <summary>
+    /// Chooses the nearest point on the incoming trail for the defensive intercept effect.
+    /// </summary>
     public static Vector2 InterceptPoint(Tank protectedTank, IReadOnlyList<Vector2> trail)
     {
         if (trail.Count == 0)
