@@ -60,7 +60,9 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     const playbackOptions = options ?? {};
     let points = Array.from(trail);
     if (playbackOptions.intercepted && playbackOptions.interceptX !== undefined && playbackOptions.interceptY !== undefined) {
-        points = trimTrailToIntercept(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
+        const patriotPlayback = createPatriotPlayback(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
+        points = patriotPlayback.points;
+        playbackOptions.patriot = patriotPlayback;
     }
 
     const stagedExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) >= 0);
@@ -157,6 +159,37 @@ function trimTrailToIntercept(points, intercept) {
     const trimmed = points.slice(0, Math.min(points.length, bestIndex + 1));
     trimmed.push(intercept);
     return trimmed;
+}
+
+function createPatriotPlayback(points, intercept) {
+    const trimmed = trimTrailToIntercept(points, intercept);
+    const apexIndex = findApexIndex(trimmed);
+    const apex = trimmed[apexIndex] ?? trimmed[0] ?? intercept;
+    const endIndex = Math.max(1, trimmed.length - 1);
+    const apexProgress = clamp(apexIndex / endIndex, 0.08, 0.84);
+    return {
+        points: trimmed,
+        apexX: apex.x,
+        apexY: apex.y,
+        apexProgress,
+        launchProgressStart: clamp(apexProgress + 0.055, 0.12, 0.9),
+        interceptX: intercept.x,
+        interceptY: intercept.y
+    };
+}
+
+function findApexIndex(points) {
+    let apexIndex = 0;
+    let apexY = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < points.length; i++) {
+        const y = Number(points[i]?.y ?? Number.POSITIVE_INFINITY);
+        if (y < apexY) {
+            apexY = y;
+            apexIndex = i;
+        }
+    }
+
+    return apexIndex;
 }
 
 function prepareScene(scene) {
@@ -1147,6 +1180,14 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
         return;
     }
 
+    const patriot = options.patriot ?? {
+        apexX: Number(options.interceptX),
+        apexY: Number(options.interceptY),
+        apexProgress: 0.24,
+        launchProgressStart: 0.32,
+        interceptX: Number(options.interceptX),
+        interceptY: Number(options.interceptY)
+    };
     const incomingOwner = String(options.ownerTankId ?? "");
     const playerTank = scene.player;
     const cpuTank = scene.cpu;
@@ -1155,67 +1196,141 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
         return;
     }
 
-    const launchProgress = clamp((pathProgress - 0.08) / 0.58, 0, 1);
-    if (launchProgress <= 0) {
-        return;
-    }
-
     const startX = launcher.x + (launcher.isCpu ? -28 : 28);
     const startY = launcher.y - 46;
-    const endX = Number(options.interceptX);
-    const endY = Number(options.interceptY);
-    const eased = 1 - Math.pow(1 - launchProgress, 2.2);
-    const x = startX + ((endX - startX) * eased);
-    const y = startY + ((endY - startY) * eased) - Math.sin(launchProgress * Math.PI) * 44;
-    const angle = Math.atan2(endY - startY, endX - startX);
+    const apexX = Number(patriot.apexX ?? options.interceptX);
+    const apexY = Number(patriot.apexY ?? options.interceptY);
+    const endX = Number(patriot.interceptX ?? options.interceptX);
+    const endY = Number(patriot.interceptY ?? options.interceptY);
+    const apexProgress = Number(patriot.apexProgress ?? 0.24);
+    const launchStart = Number(patriot.launchProgressStart ?? (apexProgress + 0.06));
+    const lockProgress = clamp((pathProgress - (apexProgress - 0.045)) / 0.09, 0, 1);
+    const launchProgress = clamp((pathProgress - launchStart) / Math.max(0.08, 1 - launchStart), 0, 1);
+    const missileProgress = 1 - Math.pow(1 - launchProgress, 2.55);
+    const controlX = startX + ((endX - startX) * 0.22);
+    const controlY = Math.min(startY, endY, apexY) - 155 - Math.abs(endX - startX) * 0.04;
+    const x = quadraticPoint(startX, controlX, endX, missileProgress);
+    const y = quadraticPoint(startY, controlY, endY, missileProgress);
+    const tangentT = Math.min(1, missileProgress + 0.012);
+    const tangentX = quadraticPoint(startX, controlX, endX, tangentT);
+    const tangentY = quadraticPoint(startY, controlY, endY, tangentT);
+    const angle = Math.atan2(tangentY - y, tangentX - x);
+    const now = performance.now();
 
     ctx.save();
     setWorldTransform();
 
-    const reticlePulse = 0.75 + Math.sin(performance.now() * 0.018) * 0.25;
-    ctx.strokeStyle = `rgba(255, 248, 217, ${0.42 + reticlePulse * 0.28})`;
+    if (lockProgress > 0) {
+        const postLaunchFade = launchProgress > 0 ? 0.48 : 1;
+        drawPatriotReticle(apexX, apexY, lockProgress * postLaunchFade, now);
+    }
+
+    if (launchProgress > 0) {
+        drawPatriotLaunchPlume(startX, startY, launchProgress);
+        drawPatriotFlightTrail(startX, startY, controlX, controlY, endX, endY, missileProgress);
+        drawPatriotInterceptGuide(apexX, apexY, endX, endY, launchProgress, now);
+
+        const glow = ctx.createRadialGradient(x, y, 1, x, y, 44);
+        glow.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+        glow.addColorStop(0.42, "rgba(121, 214, 255, 0.58)");
+        glow.addColorStop(1, "rgba(121, 214, 255, 0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y, 44, 0, Math.PI * 2);
+        ctx.fill();
+
+        drawOrientedSprite("missile", x, y, 72, 27, angle);
+    }
+
+    ctx.restore();
+}
+
+function quadraticPoint(a, b, c, t) {
+    const inv = 1 - t;
+    return (inv * inv * a) + (2 * inv * t * b) + (t * t * c);
+}
+
+function drawPatriotReticle(x, y, alpha, now) {
+    const pulse = 0.72 + Math.sin(now * 0.018) * 0.28;
+    const spin = now * 0.0045;
+    const radius = 18 + pulse * 12;
+
+    ctx.save();
+    ctx.globalAlpha = clamp01(alpha);
+    ctx.strokeStyle = `rgba(255, 248, 217, ${0.42 + pulse * 0.34})`;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(endX, endY, 18 + reticlePulse * 7, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(endX - 34, endY);
-    ctx.lineTo(endX - 12, endY);
-    ctx.moveTo(endX + 12, endY);
-    ctx.lineTo(endX + 34, endY);
-    ctx.moveTo(endX, endY - 34);
-    ctx.lineTo(endX, endY - 12);
-    ctx.moveTo(endX, endY + 12);
-    ctx.lineTo(endX, endY + 34);
+    ctx.arc(x, y, radius, spin, spin + Math.PI * 0.72);
+    ctx.arc(x, y, radius, spin + Math.PI, spin + Math.PI * 1.72);
     ctx.stroke();
 
-    ctx.strokeStyle = `rgba(121, 214, 255, ${0.32 + launchProgress * 0.62})`;
-    ctx.lineWidth = 6;
-    ctx.setLineDash([12, 8]);
+    ctx.strokeStyle = `rgba(121, 214, 255, ${0.52 + pulse * 0.28})`;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(x, y);
+    ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
 
-    const plume = ctx.createRadialGradient(startX, startY, 1, startX, startY, 34);
-    plume.addColorStop(0, `rgba(255, 255, 255, ${0.75 * (1 - launchProgress * 0.55)})`);
-    plume.addColorStop(0.38, `rgba(121, 214, 255, ${0.52 * (1 - launchProgress * 0.35)})`);
+    ctx.strokeStyle = `rgba(255, 248, 217, ${0.7 * alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(x - 38, y);
+    ctx.lineTo(x - 12, y);
+    ctx.moveTo(x + 12, y);
+    ctx.lineTo(x + 38, y);
+    ctx.moveTo(x, y - 38);
+    ctx.lineTo(x, y - 12);
+    ctx.moveTo(x, y + 12);
+    ctx.lineTo(x, y + 38);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawPatriotLaunchPlume(x, y, launchProgress) {
+    const alpha = 1 - launchProgress * 0.35;
+    const plume = ctx.createRadialGradient(x, y, 1, x, y, 30 + launchProgress * 22);
+    plume.addColorStop(0, `rgba(255, 255, 255, ${0.82 * alpha})`);
+    plume.addColorStop(0.34, `rgba(121, 214, 255, ${0.56 * alpha})`);
+    plume.addColorStop(0.72, `rgba(242, 193, 78, ${0.18 * alpha})`);
     plume.addColorStop(1, "rgba(121, 214, 255, 0)");
     ctx.fillStyle = plume;
     ctx.beginPath();
-    ctx.arc(startX, startY, 34, 0, Math.PI * 2);
+    ctx.arc(x, y, 48, 0, Math.PI * 2);
     ctx.fill();
+}
 
-    const glow = ctx.createRadialGradient(x, y, 1, x, y, 42);
-    glow.addColorStop(0, "rgba(255, 255, 255, 0.9)");
-    glow.addColorStop(0.45, "rgba(121, 214, 255, 0.55)");
-    glow.addColorStop(1, "rgba(121, 214, 255, 0)");
-    ctx.fillStyle = glow;
+function drawPatriotFlightTrail(startX, startY, controlX, controlY, endX, endY, missileProgress) {
+    const tailStart = Math.max(0, missileProgress - 0.24);
+    const segments = 18;
+    ctx.lineCap = "round";
+    for (let pass = 0; pass < 2; pass++) {
+        ctx.strokeStyle = pass === 0 ? "rgba(73, 175, 255, 0.28)" : "rgba(255, 248, 217, 0.74)";
+        ctx.lineWidth = pass === 0 ? 9 : 3;
+        ctx.beginPath();
+        for (let i = 0; i <= segments; i++) {
+            const t = tailStart + ((missileProgress - tailStart) * (i / segments));
+            const x = quadraticPoint(startX, controlX, endX, t);
+            const y = quadraticPoint(startY, controlY, endY, t);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.stroke();
+    }
+}
+
+function drawPatriotInterceptGuide(apexX, apexY, endX, endY, launchProgress, now) {
+    const alpha = Math.max(0, 0.34 * (1 - launchProgress * 0.55));
+    ctx.save();
+    ctx.setLineDash([8, 10]);
+    ctx.strokeStyle = `rgba(255, 248, 217, ${alpha})`;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x, y, 42, 0, Math.PI * 2);
-    ctx.fill();
-    drawOrientedSprite("missile", x, y, 64, 24, angle);
+    ctx.moveTo(apexX, apexY);
+    const wobble = Math.sin(now * 0.01) * 5;
+    ctx.quadraticCurveTo((apexX + endX) * 0.5, Math.min(apexY, endY) - 28 + wobble, endX, endY);
+    ctx.stroke();
+    ctx.setLineDash([]);
     ctx.restore();
 }
 
