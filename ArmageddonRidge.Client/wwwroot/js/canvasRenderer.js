@@ -193,6 +193,7 @@ function drawScene(scene, offsetX, offsetY) {
     drawWeather(scene, false);
     drawRadiation(scene.radiation ?? []);
     drawTerrain(scene.terrain ?? [], scene.world);
+    drawAimPreview(scene.previewTrail ?? []);
     drawTank(scene.player, "playerTank");
     drawTank(scene.cpu, "cpuTank");
     if (String(scene.phase ?? "").toLowerCase() !== "battle") {
@@ -625,6 +626,50 @@ function drawWind(wind) {
     ctx.fillText(`Wind ${arrow} ${Math.abs(wind ?? 0)}`, 545, 42);
 }
 
+function drawAimPreview(points) {
+    if (!points?.length || points.length < 2) {
+        return;
+    }
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash([9, 10]);
+    ctx.strokeStyle = "rgba(255, 248, 217, 0.36)";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    for (let index = 0; index < points.length; index++) {
+        const point = points[index];
+        if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(126, 226, 213, 0.86)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let index = 0; index < points.length; index++) {
+        const point = points[index];
+        if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const last = points[points.length - 1];
+    ctx.fillStyle = "rgba(126, 226, 213, 0.72)";
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
 function drawTrail(points, count = points.length, weaponId) {
     if (!points?.length || count <= 0) {
         return;
@@ -764,7 +809,7 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
         return;
     }
 
-    const launchProgress = clamp((pathProgress - 0.32) / 0.42, 0, 1);
+    const launchProgress = clamp((pathProgress - 0.08) / 0.58, 0, 1);
     if (launchProgress <= 0) {
         return;
     }
@@ -780,24 +825,51 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
 
     ctx.save();
     setWorldTransform();
-    ctx.strokeStyle = `rgba(121, 214, 255, ${0.25 + launchProgress * 0.55})`;
-    ctx.lineWidth = 4;
-    ctx.setLineDash([10, 8]);
+
+    const reticlePulse = 0.75 + Math.sin(performance.now() * 0.018) * 0.25;
+    ctx.strokeStyle = `rgba(255, 248, 217, ${0.42 + reticlePulse * 0.28})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(endX, endY, 18 + reticlePulse * 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(endX - 34, endY);
+    ctx.lineTo(endX - 12, endY);
+    ctx.moveTo(endX + 12, endY);
+    ctx.lineTo(endX + 34, endY);
+    ctx.moveTo(endX, endY - 34);
+    ctx.lineTo(endX, endY - 12);
+    ctx.moveTo(endX, endY + 12);
+    ctx.lineTo(endX, endY + 34);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(121, 214, 255, ${0.32 + launchProgress * 0.62})`;
+    ctx.lineWidth = 6;
+    ctx.setLineDash([12, 8]);
     ctx.beginPath();
     ctx.moveTo(startX, startY);
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const glow = ctx.createRadialGradient(x, y, 1, x, y, 28);
+    const plume = ctx.createRadialGradient(startX, startY, 1, startX, startY, 34);
+    plume.addColorStop(0, `rgba(255, 255, 255, ${0.75 * (1 - launchProgress * 0.55)})`);
+    plume.addColorStop(0.38, `rgba(121, 214, 255, ${0.52 * (1 - launchProgress * 0.35)})`);
+    plume.addColorStop(1, "rgba(121, 214, 255, 0)");
+    ctx.fillStyle = plume;
+    ctx.beginPath();
+    ctx.arc(startX, startY, 34, 0, Math.PI * 2);
+    ctx.fill();
+
+    const glow = ctx.createRadialGradient(x, y, 1, x, y, 42);
     glow.addColorStop(0, "rgba(255, 255, 255, 0.9)");
     glow.addColorStop(0.45, "rgba(121, 214, 255, 0.55)");
     glow.addColorStop(1, "rgba(121, 214, 255, 0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(x, y, 28, 0, Math.PI * 2);
+    ctx.arc(x, y, 42, 0, Math.PI * 2);
     ctx.fill();
-    drawOrientedSprite("missile", x, y, 42, 16, angle);
+    drawOrientedSprite("missile", x, y, 64, 24, angle);
     ctx.restore();
 }
 

@@ -205,6 +205,27 @@ public sealed class GameEngine
 
     public bool BuyUpgrade(GameState state, UpgradeType upgradeType) => Economy.BuyUpgrade(state.PlayerTank, upgradeType);
 
+    public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, float angle, int power)
+    {
+        if (state.Phase != GamePhase.Battle || state.CurrentTurn != TurnOwner.Player)
+        {
+            return [];
+        }
+
+        var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId)
+            ? state.SelectedWeaponId
+            : WeaponIds.PeaShell;
+        var weapon = Weapons.Get(weaponId);
+        if (weapon.BehaviorType is WeaponBehaviorType.Teleport or WeaponBehaviorType.Laser)
+        {
+            return [];
+        }
+
+        return weapon.Id == WeaponIds.DarkEagle
+            ? SimulateGuidedDarkEagle(state.PlayerTank, state.CpuTank, weapon).Trail
+            : _projectileSimulator.Simulate(state.Terrain, state.PlayerTank, state.CpuTank, weapon, angle, power, state.Wind, 60 * 6).Trail;
+    }
+
     private WeaponSimulation SimulateWeapon(GameState state, Tank owner, Tank opponent, WeaponDefinition weapon, float angle, int power)
     {
         if (weapon.BehaviorType == WeaponBehaviorType.Teleport)

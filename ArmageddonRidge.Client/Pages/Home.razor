@@ -224,8 +224,8 @@
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
-    private string HintText => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true
-        ? "Targeting computer armed. The projected arc is approximate."
+    private string HintText => HasTrajectoryPreview
+        ? "Trajectory aid armed. The projected arc is approximate."
         : "Watch the last trail, then correct angle and power.";
 
     private IEnumerable<WeaponDefinition> AvailablePlayerWeapons =>
@@ -421,6 +421,7 @@
             wind = _state.Wind,
             phase = _state.Phase.ToString(),
             selectedWeapon = _state.SelectedWeaponId,
+            previewTrail = PreviewTrailDto(),
             radiation = _state.RadiationZones.Select(static zone => new { x = zone.Center.X, y = zone.Center.Y, radius = zone.Radius, turns = zone.TurnsRemaining }).ToArray(),
             player = TankDto(_state.PlayerTank),
             cpu = TankDto(_state.CpuTank)
@@ -458,6 +459,34 @@
         };
         var intensity = 0.34f + ((Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber, state.Wind)) % 36) / 100f);
         return new { type, intensity };
+    }
+
+    private bool HasTrajectoryPreview => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TracerRounds) == true
+        || _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true;
+
+    private object[] PreviewTrailDto()
+    {
+        if (_state is null || !HasTrajectoryPreview)
+        {
+            return [];
+        }
+
+        var trail = Engine.PreviewPlayerShot(_state, _state.PlayerTank.TurretAngle, _power);
+        if (trail.Count == 0)
+        {
+            return [];
+        }
+
+        var preview = new List<object>(Math.Min(90, trail.Count));
+        for (var i = 0; i < trail.Count; i += 3)
+        {
+            var point = trail[i];
+            preview.Add(new { x = point.X, y = point.Y });
+        }
+
+        var last = trail[^1];
+        preview.Add(new { x = last.X, y = last.Y });
+        return [.. preview];
     }
 
     private string InventoryLabel(string weaponId)

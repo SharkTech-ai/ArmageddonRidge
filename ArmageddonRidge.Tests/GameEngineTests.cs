@@ -60,6 +60,20 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void PreviewPlayerShotReturnsDeterministicPlayerArc()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        engine.StartBattle(state);
+
+        var preview = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+
+        Assert.NotEmpty(preview);
+        Assert.Equal(preview, engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65));
+    }
+
+    [Fact]
     public void WindStaysInsidePlayableRange()
     {
         var engine = CreateEngine();
