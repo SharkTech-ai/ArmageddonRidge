@@ -8,7 +8,7 @@ namespace ArmageddonRidge.Client.Services.Rendering;
 public sealed class WasmCanvasRenderer(IJSRuntime js, WasmRenderCommandBuilder commands) : IGameRenderer
 {
     private IJSObjectReference? _module;
-    private RenderStats _stats = new() { Mode = "FullWasm", SimdHardwareAccelerated = System.Numerics.Vector.IsHardwareAccelerated };
+    private RenderStats _stats = new() { Mode = "Full WASM", SimdHardwareAccelerated = System.Numerics.Vector.IsHardwareAccelerated };
 
     public RenderMode Mode => RenderMode.FullWasm;
 
@@ -34,7 +34,7 @@ public sealed class WasmCanvasRenderer(IJSRuntime js, WasmRenderCommandBuilder c
 
         _stats = bridgeStats with
         {
-            Mode = "FullWasm",
+            Mode = "Full WASM",
             SceneBuildMs = diagnostics.SceneBuildMs,
             CommandBuildMs = diagnostics.CommandBuildMs,
             SubmitMs = started.Elapsed.TotalMilliseconds,
@@ -67,7 +67,7 @@ public sealed class WasmCanvasRenderer(IJSRuntime js, WasmRenderCommandBuilder c
             submitTimer.Stop();
             _stats = bridgeStats with
             {
-                Mode = "FullWasm",
+                Mode = "Full WASM",
                 CommandBuildMs = diagnostics.CommandBuildMs,
                 SubmitMs = submitTimer.Elapsed.TotalMilliseconds,
                 CommandCount = diagnostics.CommandCount,

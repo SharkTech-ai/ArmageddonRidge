@@ -11,5 +11,5 @@ public sealed record RenderStats
     public int CommandCount { get; init; }
     public int PayloadBytes { get; init; }
     public bool SimdHardwareAccelerated { get; init; }
-    public string Mode { get; init; } = "Hybrid";
+    public string Mode { get; init; } = "Hybrid (JS + WASM)";
 }

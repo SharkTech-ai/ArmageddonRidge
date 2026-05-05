@@ -22,7 +22,7 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
         if (_module is null) return null;
 
         var stats = await _module.InvokeAsync<RenderStats>("render", scene);
-        return stats with { Mode = "Hybrid" };
+        return stats with { Mode = "Hybrid (JS + WASM)", SimdHardwareAccelerated = false };
     }
 
     public async ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake)
@@ -37,7 +37,7 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
         if (_module is null) return null;
 
         var stats = await _module.InvokeAsync<RenderStats>("getStats");
-        return stats with { Mode = "Hybrid" };
+        return stats with { Mode = "Hybrid (JS + WASM)", SimdHardwareAccelerated = false };
     }
 
     public async ValueTask DisposeAsync()

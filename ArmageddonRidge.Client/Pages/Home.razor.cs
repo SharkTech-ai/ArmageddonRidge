@@ -121,6 +121,8 @@ public partial class Home
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
+    private string SimdStatusLabel => _simdHardwareAccelerated ? "Enabled" : "Disabled";
+
     private static string RenderModeLabel(RenderMode mode) => mode switch
     {
         RenderMode.FullWasm => "Full WASM",

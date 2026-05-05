@@ -91,7 +91,7 @@
                         <span>Commands: @_commandBuildMs.ToString("0.00") ms</span>
                         <span>Submit: @_submitMs.ToString("0.00") ms</span>
                         <span>Batch: @_commandCount / @_payloadBytes bytes</span>
-                        <span>SIMD: @(_simdHardwareAccelerated ? "on" : "off")</span>
+                        <span>SIMD: @SimdStatusLabel</span>
                         <span>Sim: @_state.LastPerformance.SimulationMs.ToString("0.00") ms</span>
                         <span>Terrain: @_state.LastPerformance.TerrainMs.ToString("0.00") ms</span>
                         <span>CPU: @_state.LastPerformance.CpuPlanningMs.ToString("0.00") ms</span>
