@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace ArmageddonRidge.Core.Models;
 
-public sealed record RadiationZone(Vector2 Center, float Radius, int TurnsRemaining, float DamagePerTurn);
+public sealed record RadiationZone(Vector2 Center, float Radius, int TurnsRemaining, float DamagePerTurn, ShotVisualKind VisualKind = ShotVisualKind.Nuclear);
 
 public sealed record ExplosionResult(
     Vector2 Center,

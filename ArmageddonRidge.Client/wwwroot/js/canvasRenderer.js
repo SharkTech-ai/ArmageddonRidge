@@ -104,7 +104,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                 const count = Math.max(1, Math.floor(points.length * pathProgress));
                 const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
                 drawScene(shotScene, shake, -shake * 0.4);
-                drawTrail(points, count, weaponId);
+                drawTrail(points, count, weaponId, explosions ?? []);
                 drawPatriotCountermeasure(shotScene, playbackOptions, pathProgress);
                 drawTriggeredExplosions(stagedExplosions, count, now, stagedStarts);
                 if (t < 1) {
@@ -115,7 +115,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                 requestAnimationFrame(() => {
                     try {
                         drawScene(shotScene, 0, 0);
-                        drawTrail(points, points.length, weaponId);
+                        drawTrail(points, points.length, weaponId, explosions ?? []);
                         drawPatriotCountermeasure(shotScene, playbackOptions, 1);
                         drawTriggeredExplosions(stagedExplosions, points.length, performance.now(), stagedStarts);
                         finish();
@@ -191,8 +191,8 @@ function drawScene(scene, offsetX, offsetY) {
     setWorldTransform(offsetX, offsetY, scene.world);
     drawSky(scene);
     drawWeather(scene, false);
-    drawRadiation(scene.radiation ?? []);
     drawTerrain(scene.terrain ?? [], scene.world);
+    drawRadiation(scene.radiation ?? []);
     drawAimPreview(scene.previewTrail ?? []);
     drawTank(scene.player, "playerTank");
     drawTank(scene.cpu, "cpuTank");
@@ -474,8 +474,17 @@ function strokeTerrainTop(terrain, step, yOffset = 0) {
 
 function drawRadiation(zones) {
     for (const zone of zones) {
-        drawRadiationZone(zone);
+        if (isLavaZone(zone)) {
+            drawLavaZone(zone);
+        } else {
+            drawRadiationZone(zone);
+        }
     }
+}
+
+function isLavaZone(zone) {
+    const kind = String(zone.visualKind ?? zone.kind ?? "").toLowerCase();
+    return Boolean(zone.lava || zone.napalm || kind.includes("lava") || kind.includes("fire"));
 }
 
 function drawRadiationZone(zone) {
@@ -522,6 +531,40 @@ function drawRadiationZone(zone) {
     ctx.restore();
 
     drawRadioactiveGlyph(x, y - Math.min(34, radius * 0.24), clamp(radius * 0.2, 24, 44), 0.78 * pulse);
+}
+
+function drawLavaZone(zone) {
+    const x = Number(zone.x ?? 0);
+    const y = Number(zone.y ?? 0);
+    const radius = Number(zone.radius ?? 42);
+    const turns = Math.max(1, Number(zone.turns ?? 1));
+    const now = performance.now() * 0.001;
+    const pulse = 0.76 + Math.sin(now * 5.2 + x * 0.021) * 0.22;
+
+    ctx.save();
+    ctx.translate(x, y + radius * 0.16);
+    ctx.scale(1, 0.38);
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, radius * 1.05);
+    glow.addColorStop(0, `rgba(255, 224, 78, ${0.25 * pulse})`);
+    glow.addColorStop(0.42, `rgba(255, 82, 24, ${0.22 + turns * 0.04})`);
+    glow.addColorStop(0.82, "rgba(84, 24, 15, 0.2)");
+    glow.addColorStop(1, "rgba(84, 24, 15, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    for (let i = 0; i < 5; i++) {
+        const angle = (Math.PI * 2 * i / 5) + now * 0.35;
+        const distance = radius * (0.1 + (i % 3) * 0.13);
+        drawLavaSprite(
+            x + Math.cos(angle) * distance,
+            y + radius * 0.1 + Math.sin(angle) * distance * 0.34,
+            radius * (0.34 + (i % 2) * 0.08),
+            now + i * 1.7,
+            0.42 + i * 0.05);
+    }
 }
 
 function drawTank(tank, frameName) {
@@ -710,7 +753,7 @@ function drawAimPreview(points) {
     ctx.restore();
 }
 
-function drawTrail(points, count = points.length, weaponId) {
+function drawTrail(points, count = points.length, weaponId, explosions = []) {
     if (!points?.length || count <= 0) {
         return;
     }
@@ -726,6 +769,12 @@ function drawTrail(points, count = points.length, weaponId) {
 
     if (isDarkEagleWeapon(weaponId)) {
         drawDarkEagleTrail(points, visibleCount);
+        ctx.restore();
+        return;
+    }
+
+    if (isMirvWeapon(weaponId)) {
+        drawMirvTrail(points, visibleCount, explosions);
         ctx.restore();
         return;
     }
@@ -750,7 +799,7 @@ function drawTrail(points, count = points.length, weaponId) {
     const last = points[visibleCount - 1];
     const prev = trajectoryReferencePoint(points, visibleCount);
     const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
-    drawFlameTip(last, prev, missileLike);
+    drawFlameTip(last, prev, missileLike && !isMopWeapon(weaponId));
     if (isMopWeapon(weaponId)) {
         drawMopProjectile(last, prev);
     } else if (missileLike) {
@@ -777,6 +826,134 @@ function trajectoryReferencePoint(points, visibleCount) {
     }
 
     return points[Math.max(0, visibleCount - 2)] ?? last;
+}
+
+function drawMirvTrail(points, visibleCount, explosions) {
+    const apexIndex = findTrajectoryApexIndex(points);
+    const apex = points[apexIndex];
+    const primaryCount = Math.min(visibleCount, apexIndex + 1);
+    drawMirvPath(points, 0, primaryCount, "rgba(255, 246, 191, 0.82)", 3);
+
+    if (visibleCount <= apexIndex + 1) {
+        const last = points[primaryCount - 1] ?? apex;
+        const prev = points[Math.max(0, primaryCount - 4)] ?? last;
+        drawOrientedSprite("shell", last.x, last.y, 24, 10, Math.atan2(last.y - prev.y, last.x - prev.x));
+        return;
+    }
+
+    const splitProgress = clamp((visibleCount - apexIndex) / Math.max(1, points.length - apexIndex), 0, 1);
+    drawMirvSplitFlash(apex, splitProgress);
+    const targets = explosions?.length ? explosions : [{ x: points[points.length - 1].x, y: points[points.length - 1].y }];
+    for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        const lane = i - ((targets.length - 1) / 2);
+        const control = {
+            x: apex.x + lane * 24,
+            y: apex.y - 18 - Math.abs(lane) * 9
+        };
+        const current = quadraticPoint(apex, control, target, splitProgress);
+        const previous = quadraticPoint(apex, control, target, Math.max(0, splitProgress - 0.045));
+        drawMirvFragmentTrail(apex, control, target, splitProgress, i);
+        drawOrientedSprite("shell", current.x, current.y, 16, 7, Math.atan2(current.y - previous.y, current.x - previous.x));
+    }
+}
+
+function drawMirvPath(points, start, end, color, width) {
+    if (end - start < 2) {
+        return;
+    }
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(7, 10, 13, 0.36)";
+    ctx.lineWidth = width + 3;
+    ctx.beginPath();
+    for (let i = start; i < end; i++) {
+        const point = points[i];
+        if (i === start) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let i = start; i < end; i++) {
+        const point = points[i];
+        if (i === start) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+}
+
+function drawMirvFragmentTrail(start, control, target, progress, fragment) {
+    const steps = Math.max(2, Math.floor(progress * 14));
+    ctx.strokeStyle = fragment % 2 === 0 ? "rgba(255, 220, 98, 0.74)" : "rgba(255, 248, 217, 0.62)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+        const t = progress * (i / steps);
+        const point = quadraticPoint(start, control, target, t);
+        if (i === 0) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+
+    for (let i = 0; i <= steps; i += 2) {
+        const t = progress * (i / steps);
+        const point = quadraticPoint(start, control, target, t);
+        const alpha = 0.52 * (i / Math.max(1, steps));
+        ctx.fillStyle = `rgba(255, 126, 38, ${alpha})`;
+        ctx.fillRect(point.x - 1, point.y - 1, 2, 2);
+    }
+}
+
+function drawMirvSplitFlash(apex, progress) {
+    const flash = Math.sin(Math.min(1, progress * 2.2) * Math.PI);
+    ctx.fillStyle = `rgba(255, 248, 217, ${0.44 * flash})`;
+    ctx.beginPath();
+    ctx.arc(apex.x, apex.y, 12 + flash * 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255, 199, 66, ${0.72 * flash})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 7; i++) {
+        const angle = (Math.PI * 2 * i / 7) + progress * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(apex.x + Math.cos(angle) * 8, apex.y + Math.sin(angle) * 8);
+        ctx.lineTo(apex.x + Math.cos(angle) * (28 + flash * 16), apex.y + Math.sin(angle) * (28 + flash * 16));
+        ctx.stroke();
+    }
+}
+
+function findTrajectoryApexIndex(points) {
+    let index = 0;
+    let minY = Number.MAX_VALUE;
+    for (let i = 0; i < points.length; i++) {
+        if (points[i].y < minY) {
+            minY = points[i].y;
+            index = i;
+        }
+    }
+
+    return index;
+}
+
+function quadraticPoint(start, control, end, t) {
+    const inv = 1 - t;
+    return {
+        x: (inv * inv * start.x) + (2 * inv * t * control.x) + (t * t * end.x),
+        y: (inv * inv * start.y) + (2 * inv * t * control.y) + (t * t * end.y)
+    };
 }
 
 function drawSmokeTrail(points, count, weaponId) {
@@ -1067,39 +1244,39 @@ function drawMopProjectile(last, prev) {
     ctx.translate(last.x, last.y);
     ctx.rotate(angle);
     if (extraSprites.gbu57Mop) {
-        ctx.drawImage(extraSprites.gbu57Mop, -30, -11, 60, 22);
+        ctx.drawImage(extraSprites.gbu57Mop, -39, -15, 78, 30);
         ctx.restore();
         return;
     }
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.48)";
     ctx.beginPath();
-    ctx.ellipse(-2, 4, 23, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(-3, 6, 30, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const body = ctx.createLinearGradient(-22, -5, -22, 5);
+    const body = ctx.createLinearGradient(-30, -7, -30, 7);
     body.addColorStop(0, "#f2f1dc");
     body.addColorStop(0.32, "#9da7ad");
     body.addColorStop(0.72, "#3d454d");
     body.addColorStop(1, "#12171e");
     ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.moveTo(22, 0);
-    ctx.lineTo(13, -6);
-    ctx.lineTo(-20, -6);
-    ctx.lineTo(-27, 0);
-    ctx.lineTo(-20, 6);
-    ctx.lineTo(13, 6);
+    ctx.moveTo(30, 0);
+    ctx.lineTo(17, -8);
+    ctx.lineTo(-26, -8);
+    ctx.lineTo(-35, 0);
+    ctx.lineTo(-26, 8);
+    ctx.lineTo(17, 8);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = "#f0d264";
-    ctx.fillRect(-11, -4, 4, 8);
+    ctx.fillRect(-14, -5, 5, 10);
     ctx.fillStyle = "#161b23";
-    ctx.fillRect(-23, -10, 8, 5);
-    ctx.fillRect(-23, 5, 8, 5);
+    ctx.fillRect(-30, -13, 11, 6);
+    ctx.fillRect(-30, 7, 11, 6);
     ctx.fillStyle = "#fff8d9";
-    ctx.fillRect(7, -3, 9, 2);
+    ctx.fillRect(8, -4, 12, 2);
     ctx.restore();
 }
 
@@ -1242,6 +1419,7 @@ function drawSmokePuffs(explosion, radius, progress) {
 
 function drawLavaSplash(explosion, radius, progress) {
     const fade = Math.max(0, 1 - progress * 0.55);
+    drawLavaSprite(explosion.x, explosion.y + radius * 0.18, radius * (0.9 + progress * 0.22), progress * 7, fade);
     for (let i = 0; i < 13; i++) {
         const angle = -Math.PI + (Math.PI * i / 12);
         const arc = radius * (0.35 + progress * (0.55 + (i % 4) * 0.1));
@@ -1257,6 +1435,34 @@ function drawLavaSplash(explosion, radius, progress) {
     ctx.fillRect(explosion.x - radius * 0.55, explosion.y + radius * 0.18, radius * 1.1, Math.max(3, radius * 0.08));
     ctx.fillStyle = `rgba(255, 225, 92, ${0.34 * fade})`;
     ctx.fillRect(explosion.x - radius * 0.34, explosion.y + radius * 0.2, radius * 0.68, Math.max(2, radius * 0.035));
+}
+
+function drawLavaSprite(x, y, size, phase, alpha = 1) {
+    const width = Math.max(18, size * 1.35);
+    const height = Math.max(10, size * 0.45);
+    ctx.save();
+    ctx.globalAlpha = clamp01(alpha);
+    if (extraSprites.lavaPool) {
+        ctx.drawImage(extraSprites.lavaPool, x - width * 0.5, y - height * 0.5, width, height);
+    } else {
+        ctx.fillStyle = "rgba(63, 17, 12, 0.92)";
+        ctx.fillRect(x - width * 0.5, y - height * 0.38, width, height * 0.72);
+        ctx.fillStyle = "#ff4c1b";
+        ctx.fillRect(x - width * 0.42, y - height * 0.22, width * 0.84, height * 0.42);
+        ctx.fillStyle = "#ffd84d";
+        ctx.fillRect(x - width * 0.22, y - height * 0.12, width * 0.38, height * 0.2);
+    }
+
+    const bubbleCount = 6;
+    for (let i = 0; i < bubbleCount; i++) {
+        const t = (Math.sin(phase + i * 1.31) + 1) * 0.5;
+        const bx = x - width * 0.36 + width * ((i + 0.5) / bubbleCount);
+        const by = y - height * (0.05 + t * 0.36);
+        ctx.fillStyle = i % 2 === 0 ? `rgba(255, 216, 72, ${0.62 * alpha})` : `rgba(255, 83, 24, ${0.58 * alpha})`;
+        ctx.fillRect(bx, by, Math.max(2, width * 0.045), Math.max(2, height * 0.16));
+    }
+
+    ctx.restore();
 }
 
 function drawNukeColumn(explosion, radius, progress) {
@@ -1396,6 +1602,11 @@ function isDarkEagleWeapon(weaponId) {
     return String(weaponId ?? "").toLowerCase().includes("dark-eagle");
 }
 
+function isMirvWeapon(weaponId) {
+    const id = String(weaponId ?? "").toLowerCase();
+    return id.includes("mirv") || id.includes("splitter");
+}
+
 function shotDuration(pointCount, weaponId) {
     if (isDarkEagleWeapon(weaponId)) {
         return 2900;
@@ -1405,10 +1616,14 @@ function shotDuration(pointCount, weaponId) {
         return Math.min(3400, Math.max(1500, pointCount * 13));
     }
 
+    if (isMirvWeapon(weaponId)) {
+        return Math.min(1800, Math.max(900, pointCount * 5.5));
+    }
+
     const dramatic = isMopWeapon(weaponId);
     return Math.min(
-        dramatic ? 1600 : 1200,
-        Math.max(dramatic ? 620 : 260, pointCount * (dramatic ? 5.5 : 4)));
+        dramatic ? 2100 : 1200,
+        Math.max(dramatic ? 900 : 260, pointCount * (dramatic ? 8.5 : 4)));
 }
 
 function shotPathProgress(t, weaponId) {
@@ -1551,7 +1766,8 @@ async function loadSprites() {
     extraSprites = {};
     await Promise.allSettled([
         loadExtraSprite("shahedDrone", "assets/sprites/shahed-drone.png"),
-        loadExtraSprite("gbu57Mop", "assets/sprites/gbu-57-mop.png")
+        loadExtraSprite("gbu57Mop", "assets/sprites/gbu-57-mop.png"),
+        loadExtraSprite("lavaPool", "assets/sprites/lava-pool.png")
     ]);
 }
 

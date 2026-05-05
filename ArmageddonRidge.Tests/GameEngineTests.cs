@@ -190,6 +190,24 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void SplitterMirvProducesSevenSpreadImpacts()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.SplitterMirv, 1);
+        state.SelectedWeaponId = WeaponIds.SplitterMirv;
+        engine.StartBattle(state);
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 42, power: 65);
+
+        Assert.Equal(WeaponIds.SplitterMirv, result.WeaponId);
+        Assert.Equal(7, result.Explosions.Count);
+        Assert.True(result.Trail.Count > 8);
+        Assert.True(result.Explosions.Max(static explosion => explosion.Center.X) - result.Explosions.Min(static explosion => explosion.Center.X) > 150);
+    }
+
+    [Fact]
     public void DarkEagleGuidesDirectlyToOpponent()
     {
         var engine = CreateEngine();

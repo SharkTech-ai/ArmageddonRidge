@@ -422,7 +422,15 @@
             phase = _state.Phase.ToString(),
             selectedWeapon = _state.SelectedWeaponId,
             previewTrail = PreviewTrailDto(),
-            radiation = _state.RadiationZones.Select(static zone => new { x = zone.Center.X, y = zone.Center.Y, radius = zone.Radius, turns = zone.TurnsRemaining }).ToArray(),
+            radiation = _state.RadiationZones.Select(static zone => new
+            {
+                x = zone.Center.X,
+                y = zone.Center.Y,
+                radius = zone.Radius,
+                turns = zone.TurnsRemaining,
+                visualKind = zone.VisualKind.ToString(),
+                lava = zone.VisualKind == ShotVisualKind.Lava || zone.VisualKind == ShotVisualKind.Fire
+            }).ToArray(),
             player = TankDto(_state.PlayerTank),
             cpu = TankDto(_state.CpuTank)
         };

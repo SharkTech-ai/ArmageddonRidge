@@ -50,6 +50,7 @@ public sealed class AssetManifestTests
         {
             "shahed-drone.png",
             "gbu-57-mop.png",
+            "lava-pool.png",
             Path.Combine("icons", "shahed-drone-swarm.png"),
             Path.Combine("icons", "gbu-57-mop.png")
         })

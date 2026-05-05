@@ -16,10 +16,12 @@ public sealed class ExplosionService
         var ownerDamage = weapon.CanDamageSelf ? ApplyDamage(owner, center, weapon) : 0;
         var opponentDamage = ApplyDamage(opponent, center, weapon);
         var newZones = new List<RadiationZone>();
+        var resolvedVisualKind = visualKind ?? VisualKindFor(weapon);
 
         if (weapon.RadiationTurns > 0 && weapon.RadiationDamagePerTurn > 0)
         {
-            var zone = new RadiationZone(center, weapon.BlastRadius * 0.7f, weapon.RadiationTurns, weapon.RadiationDamagePerTurn);
+            var zoneKind = resolvedVisualKind == ShotVisualKind.Fire ? ShotVisualKind.Lava : resolvedVisualKind;
+            var zone = new RadiationZone(center, weapon.BlastRadius * 0.7f, weapon.RadiationTurns, weapon.RadiationDamagePerTurn, zoneKind);
             zones.Add(zone);
             newZones.Add(zone);
         }
@@ -33,7 +35,7 @@ public sealed class ExplosionService
             weapon.BehaviorType == WeaponBehaviorType.Dirt,
             weapon.Category == WeaponCategory.Nuclear,
             newZones,
-            visualKind ?? VisualKindFor(weapon));
+            resolvedVisualKind);
     }
 
     public float ApplyRadiation(Tank tank, List<RadiationZone> zones)

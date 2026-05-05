@@ -275,6 +275,11 @@ public sealed class GameEngine
             return SimulateMultiStagePenetrator(primary, owner, weapon);
         }
 
+        if (weapon.Id == WeaponIds.SplitterMirv)
+        {
+            return SimulateSplitterMirv(primary, weapon);
+        }
+
         if (weapon.BehaviorType != WeaponBehaviorType.Cluster && weapon.BehaviorType != WeaponBehaviorType.DroneSwarm)
         {
             return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [], VisualKindFor(weapon))]);
@@ -293,6 +298,22 @@ public sealed class GameEngine
             var chaosY = droneSwarm ? droneRandom!.NextSingle() * 42f - 18f : 0f;
             var center = primary.ImpactPoint + new Vector2(offset + chaosX, (-MathF.Abs(offset) * 0.25f) + wave + chaosY);
             explosions.Add(new ExplosionResult(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], VisualKindFor(weapon)));
+        }
+
+        return new WeaponSimulation(primary.Trail, primary.ImpactPoint, explosions);
+    }
+
+    private static WeaponSimulation SimulateSplitterMirv(ProjectileSimulation primary, WeaponDefinition weapon)
+    {
+        var count = Math.Max(weapon.ClusterCount, 7);
+        var explosions = new List<ExplosionResult>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var lane = i - ((count - 1) / 2f);
+            var xOffset = lane * 34f;
+            var yOffset = (MathF.Abs(lane) * -9f) + ((i % 2) == 0 ? -5f : 7f);
+            var center = ClampToWorld(primary.ImpactPoint + new Vector2(xOffset, yOffset));
+            explosions.Add(new ExplosionResult(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Ballistic));
         }
 
         return new WeaponSimulation(primary.Trail, primary.ImpactPoint, explosions);
