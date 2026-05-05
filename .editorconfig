@@ -11,6 +11,8 @@ dotnet_style_qualification_for_event = false:suggestion
 csharp_style_namespace_declarations = file_scoped:warning
 csharp_style_var_when_type_is_apparent = true:suggestion
 csharp_style_var_elsewhere = true:suggestion
+csharp_prefer_braces = false:suggestion
+csharp_preserve_single_line_statements = true
 
 [*.{razor,cshtml,css,js,json,md,yml}]
 indent_style = space

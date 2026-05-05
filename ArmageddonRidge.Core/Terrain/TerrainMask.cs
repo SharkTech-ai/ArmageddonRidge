@@ -17,9 +17,7 @@ public sealed class TerrainMask
         Width = width;
         Height = height;
         if (solidTop.Count != width)
-        {
             throw new ArgumentException("Terrain heightmap width mismatch.", nameof(solidTop));
-        }
 
         _solidTop = solidTop.ToArray();
     }
@@ -45,9 +43,7 @@ public sealed class TerrainMask
     public void CopyFrom(TerrainMask source)
     {
         if (source.Width != Width || source.Height != Height)
-        {
             throw new InvalidOperationException("Terrain dimensions must match.");
-        }
 
         for (var i = 0; i < _solidTop.Length; i++)
         {
@@ -102,9 +98,7 @@ public sealed class TerrainMask
     public bool IsSolid(float x, float y)
     {
         if (x < 0 || x >= Width || y < 0 || y >= Height)
-        {
             return false;
-        }
 
         return y >= _solidTop[(int)x];
     }
@@ -125,9 +119,7 @@ public sealed class TerrainMask
             var dx = x - center.X;
             var remaining = (radius * radius) - (dx * dx);
             if (remaining <= 0)
-            {
                 continue;
-            }
 
             var lowerArc = center.Y + MathF.Sqrt(remaining);
             var nextTop = Math.Clamp(lowerArc, 0, Height);
@@ -155,9 +147,7 @@ public sealed class TerrainMask
             var dx = x - center.X;
             var remaining = (radius * radius) - (dx * dx);
             if (remaining <= 0)
-            {
                 continue;
-            }
 
             var upperArc = center.Y - MathF.Sqrt(remaining);
             var nextTop = Math.Clamp(upperArc, 0, Height);

@@ -83,9 +83,7 @@ public sealed class ProjectileSimulator
         for (var step = 0; step < maxSteps; step++)
         {
             if (captureTrail && step % 2 == 0)
-            {
                 trail!.Add(new Vector2(px, py));
-            }
 
             var nextVx = vx + windAcceleration;
             var nextVy = vy + gravityAcceleration;
@@ -100,15 +98,11 @@ public sealed class ProjectileSimulator
                 SegmentDistanceSquared(px, py, nextX, nextY, ownerCenter.X, ownerCenter.Y));
 
             if (SweptHitsTank(px, py, nextX, nextY, opponentHitbox, GameConstants.ProjectileCollisionRadius, out var opponentHit))
-            {
                 return Finish(trail, captureTrail, opponentHit.X, opponentHit.Y, ProjectileStopReason.TankHit, nearestOpponentSquared, nearestOwnerSquared);
-            }
 
             var ownerSegmentTouches = SweptHitsTank(px, py, nextX, nextY, ownerHitbox, GameConstants.ProjectileCollisionRadius, out var ownerHit);
             if (step > 8 && ownerProjectileHasClearedTank && ownerSegmentTouches)
-            {
                 return Finish(trail, captureTrail, ownerHit.X, ownerHit.Y, ProjectileStopReason.OwnerHit, nearestOpponentSquared, nearestOwnerSquared);
-            }
 
             if (!ownerSegmentTouches) ownerProjectileHasClearedTank = true;
 
@@ -200,17 +194,13 @@ public sealed class ProjectileSimulator
     {
         const float Epsilon = 0.0001f;
         if (MathF.Abs(delta) < Epsilon)
-        {
             return origin >= min && origin <= max;
-        }
 
         var inv = 1f / delta;
         var t1 = (min - origin) * inv;
         var t2 = (max - origin) * inv;
         if (t1 > t2)
-        {
             (t1, t2) = (t2, t1);
-        }
 
         tMin = MathF.Max(tMin, t1);
         tMax = MathF.Min(tMax, t2);

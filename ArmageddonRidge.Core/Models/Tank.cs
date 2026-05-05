@@ -123,9 +123,7 @@ public sealed class Tank
         if (weaponId == WeaponIds.PeaShell) return;
 
         if (!Inventory.TryGetValue(weaponId, out var count) || count <= 0)
-        {
             throw new InvalidOperationException($"Tank {Id} does not own weapon {weaponId}.");
-        }
 
         Inventory[weaponId] = count - 1;
     }

@@ -24,10 +24,7 @@ public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask UnlockAsync()
     {
-        if (_module is not null)
-        {
-            await _module.InvokeVoidAsync("unlock");
-        }
+        if (_module is not null) await _module.InvokeVoidAsync("unlock");
     }
 
     /// <summary>
@@ -35,10 +32,7 @@ public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask PlayAsync(string sound)
     {
-        if (_module is not null)
-        {
-            await _module.InvokeVoidAsync("play", sound);
-        }
+        if (_module is not null) await _module.InvokeVoidAsync("play", sound);
     }
 
     /// <summary>
@@ -46,10 +40,7 @@ public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask SetVolumeAsync(float volume)
     {
-        if (_module is not null)
-        {
-            await _module.InvokeVoidAsync("setVolume", volume);
-        }
+        if (_module is not null) await _module.InvokeVoidAsync("setVolume", volume);
     }
 
     /// <summary>
@@ -57,9 +48,6 @@ public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null)
-        {
-            await _module.DisposeAsync();
-        }
+        if (_module is not null) await _module.DisposeAsync();
     }
 }

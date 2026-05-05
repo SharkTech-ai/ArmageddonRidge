@@ -27,14 +27,10 @@ public static class PatriotDefense
             var explosion = projectedExplosions[i];
             var radius = explosion.DamageRadius + ThreatPadding;
             if (radius <= 0)
-            {
                 continue;
-            }
 
             if (Vector2.DistanceSquared(protectedTank.Center, explosion.Center) <= radius * radius)
-            {
                 return true;
-            }
         }
 
         var envelopeSquared = TrailEnvelope * TrailEnvelope;
@@ -42,9 +38,7 @@ public static class PatriotDefense
         for (var i = 0; i < trail.Count; i += step)
         {
             if (Vector2.DistanceSquared(protectedTank.Center, trail[i]) <= envelopeSquared)
-            {
                 return true;
-            }
         }
 
         return false;
@@ -56,9 +50,7 @@ public static class PatriotDefense
     public static Vector2 InterceptPoint(Tank protectedTank, IReadOnlyList<Vector2> trail)
     {
         if (trail.Count == 0)
-        {
             return protectedTank.Center + new Vector2(0, -70);
-        }
 
         var best = trail[0];
         var bestDistance = Vector2.DistanceSquared(best, protectedTank.Center);

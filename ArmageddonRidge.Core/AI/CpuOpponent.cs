@@ -43,9 +43,7 @@ public sealed class CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simul
                     + (DeterministicNoise(state, weapon.Id, 0, 100, 0) * profile.Noise);
 
                 if (guidedScore > best.Score)
-                {
                     best = new CpuShotPlan(weapon.Id, AngleToward(state.CpuTank, state.PlayerTank), 100, TauntFor(state.CpuTank, weapon), guidedScore, watch.Elapsed.TotalMilliseconds);
-                }
 
                 continue;
             }
@@ -68,14 +66,10 @@ public sealed class CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simul
                         + (simulation.StopReason == ProjectileStopReason.TankHit ? 400 : 0);
 
                     if (weapon.BehaviorType == WeaponBehaviorType.DroneSwarm)
-                    {
                         score += 60;
-                    }
 
                     if (weapon.Category == WeaponCategory.Nuclear && selfRisk / MathF.Max(weapon.BlastRadius, 1) > profile.NukeSelfRiskTolerance)
-                    {
                         score -= 900;
-                    }
 
                     score += DeterministicNoise(state, weapon.Id, angle, power, 0) * profile.Noise;
                     if (score > best.Score)
@@ -111,24 +105,16 @@ public sealed class CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simul
     private static string TauntFor(Tank cpu, WeaponDefinition weapon)
     {
         if (weapon.Category == WeaponCategory.Nuclear)
-        {
             return $"{cpu.Name}: I brought sunscreen. And a warhead.";
-        }
 
         if (weapon.Id == WeaponIds.ShahedDroneSwarm)
-        {
             return $"{cpu.Name}: Arcade drones inbound. Very dramatic, barely regulated.";
-        }
 
         if (weapon.Id == WeaponIds.DarkEagle)
-        {
             return $"{cpu.Name}: Low wind, high drama.";
-        }
 
         if (weapon.Id == WeaponIds.Gbu57Mop)
-        {
             return $"{cpu.Name}: Two-stage problem incoming.";
-        }
 
         var line = weapon.BehaviorType switch
         {

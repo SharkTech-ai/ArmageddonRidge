@@ -116,9 +116,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     public ShotResolution FireCurrentTurn(GameState state, MatchSettings settings, float? angle = null, int? power = null)
     {
         if (state.Phase != GamePhase.Battle)
-        {
             throw new InvalidOperationException("Cannot fire outside the battle phase.");
-        }
 
         var cpuPlanningMs = 0d;
         var owner = state.CurrentTurn == TurnOwner.Player ? state.PlayerTank : state.CpuTank;
@@ -137,9 +135,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         }
 
         if (!owner.HasWeapon(weaponId))
-        {
             weaponId = WeaponIds.PeaShell;
-        }
 
         var weapon = Weapons.Get(weaponId);
         owner.ConsumeWeapon(weaponId);
@@ -253,18 +249,14 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, float angle, int power)
     {
         if (state.Phase != GamePhase.Battle || state.CurrentTurn != TurnOwner.Player)
-        {
             return [];
-        }
 
         var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId)
             ? state.SelectedWeaponId
             : WeaponIds.PeaShell;
         var weapon = Weapons.Get(weaponId);
         if (weapon.BehaviorType is WeaponBehaviorType.Teleport or WeaponBehaviorType.Laser)
-        {
             return [];
-        }
 
         return weapon.Id == WeaponIds.DarkEagle
             ? SimulateGuidedDarkEagle(state.PlayerTank, state.CpuTank, weapon).Trail
@@ -285,25 +277,17 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             return SimulateLaser(state.Terrain, owner, opponent, weapon);
 
         if (weapon.Id == WeaponIds.DarkEagle)
-        {
             return SimulateGuidedDarkEagle(owner, opponent, weapon);
-        }
 
         var primary = _projectileSimulator.Simulate(state.Terrain, owner, opponent, weapon, angle, power, state.Wind);
         if (weapon.BehaviorType == WeaponBehaviorType.MultiStagePenetrator)
-        {
             return SimulateMultiStagePenetrator(primary, owner, weapon);
-        }
 
         if (weapon.Id == WeaponIds.SplitterMirv)
-        {
             return SimulateSplitterMirv(primary, weapon);
-        }
 
         if (weapon.BehaviorType != WeaponBehaviorType.Cluster && weapon.BehaviorType != WeaponBehaviorType.DroneSwarm)
-        {
             return new WeaponSimulation(primary.Trail, primary.ImpactPoint, [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, weapon.BehaviorType == WeaponBehaviorType.Dirt, weapon.Category == WeaponCategory.Nuclear, [], VisualKindFor(weapon))]);
-        }
 
         var droneSwarm = weapon.BehaviorType == WeaponBehaviorType.DroneSwarm;
         var droneRandom = droneSwarm ? new Random(ShotSeed(state, owner, weapon)) : null;
@@ -438,17 +422,13 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         var trail = new List<Vector2>(primary.Trail.Count + 18);
         trail.AddRange(primary.Trail);
         if (trail.Count == 0)
-        {
             trail.Add(primary.ImpactPoint);
-        }
 
         var impact = primary.ImpactPoint;
         var previous = trail.Count > 1 ? trail[^2] : owner.Center;
         var direction = impact - previous;
         if (direction.LengthSquared() < 0.001f)
-        {
             direction = new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f);
-        }
 
         direction = Vector2.Normalize(new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)));
         var firstTriggerIndex = Math.Max(0, trail.Count - 1);
@@ -509,9 +489,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             resolvedExplosions.Add(resolved);
 
             if (effectiveWeapon.TerrainRadius > 0)
-            {
                 touched += _terrainDeformer.Apply(state.Terrain, effectiveWeapon, center);
-            }
         }
 
         return touched;
@@ -604,10 +582,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
 
     private static void ApplyFallDamage(Tank tank, float fallDistance)
     {
-        if (fallDistance <= 70)
-        {
-            return;
-        }
+        if (fallDistance <= 70) return;
 
         if (tank.HasParachute)
         {
@@ -628,19 +603,13 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     private TurnOwner? Winner(GameState state)
     {
         if (state.PlayerTank.IsDestroyed && state.CpuTank.IsDestroyed)
-        {
             return state.CurrentTurn;
-        }
 
         if (state.CpuTank.IsDestroyed)
-        {
             return TurnOwner.Player;
-        }
 
         if (state.PlayerTank.IsDestroyed)
-        {
             return TurnOwner.Cpu;
-        }
 
         return null;
     }
@@ -684,39 +653,25 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         cpu.Inventory.Clear();
         cpu.AddWeapon(WeaponIds.PeaShell, -1);
         if (round >= 2)
-        {
             cpu.AddWeapon(WeaponIds.HeavyShell, 2);
-        }
 
         if (round >= 3)
-        {
             cpu.AddWeapon(WeaponIds.Excavator, 1);
-        }
 
         if (round >= 4)
-        {
             cpu.AddWeapon(WeaponIds.ClusterPopper, 1);
-        }
 
         if (round >= 4 && settings.Difficulty >= Difficulty.Normal)
-        {
             cpu.AddWeapon(WeaponIds.ShahedDroneSwarm, 1);
-        }
 
         if (round >= 5 && settings.Difficulty >= Difficulty.Veteran)
-        {
             cpu.AddWeapon(WeaponIds.DarkEagle, 1);
-        }
 
         if (round >= 6 && settings.Difficulty >= Difficulty.Veteran)
-        {
             cpu.AddWeapon(WeaponIds.Gbu57Mop, 1);
-        }
 
         if (settings.EnableNuclearWeapons && round >= 5 && settings.Difficulty >= Difficulty.Maniac)
-        {
             cpu.AddWeapon(WeaponIds.TacticalNuke, 1);
-        }
     }
 
     private static ShotVisualKind VisualKindFor(WeaponDefinition weapon) => weapon.BehaviorType switch

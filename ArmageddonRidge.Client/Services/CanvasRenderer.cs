@@ -27,10 +27,7 @@ public sealed class CanvasRenderer(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask<RenderStats?> RenderAsync(object scene)
     {
-        if (_module is null)
-        {
-            return null;
-        }
+        if (_module is null) return null;
 
         return await _module.InvokeAsync<RenderStats>("render", scene);
     }
@@ -49,10 +46,7 @@ public sealed class CanvasRenderer(IJSRuntime js) : IAsyncDisposable
         string? ownerTankId = null,
         string? visualKind = null)
     {
-        if (_module is null)
-        {
-            return;
-        }
+        if (_module is null) return;
 
         var trailPayload = new object[trail.Count];
         for (var i = 0; i < trail.Count; i++)
@@ -112,10 +106,7 @@ public sealed class CanvasRenderer(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask<RenderStats?> GetStatsAsync()
     {
-        if (_module is null)
-        {
-            return null;
-        }
+        if (_module is null) return null;
 
         return await _module.InvokeAsync<RenderStats>("getStats");
     }
@@ -125,10 +116,7 @@ public sealed class CanvasRenderer(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null)
-        {
-            await _module.DisposeAsync();
-        }
+        if (_module is not null) await _module.DisposeAsync();
     }
 }
 
