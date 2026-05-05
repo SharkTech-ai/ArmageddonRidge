@@ -95,31 +95,40 @@
                 @if (_state.Phase == GamePhase.Battle)
                 {
                     <div class="floating-command @(_battlePanelCollapsed ? "is-expanded" : "is-compact")" aria-label="Battle controls">
-                        <button class="command-toggle" title="@BattlePanelToggleTitle" @onclick="ToggleBattlePanel">
-                            @(_battlePanelCollapsed ? "Panel" : "Wide")
-                        </button>
                         @if (_battlePanelCollapsed)
                         {
-                            <div class="floating-fields">
-                                <label class="wide">
-                                    Weapon
-                                    <select @bind="_state.SelectedWeaponId">
-                                        @foreach (var weapon in AvailablePlayerWeapons)
-                                        {
-                                            <option value="@weapon.Id">@weapon.DisplayName (@InventoryLabel(weapon.Id))</option>
-                                        }
-                                    </select>
+                            <div class="floating-instruments">
+                                <div class="instrument-top">
+                                    <button class="command-toggle" title="@BattlePanelToggleTitle" @onclick="ToggleBattlePanel">Panel</button>
+                                    <label class="weapon-compact">
+                                        <span>Weapon</span>
+                                        <select @bind="_state.SelectedWeaponId" aria-label="Weapon">
+                                            @foreach (var weapon in AvailablePlayerWeapons)
+                                            {
+                                                <option value="@weapon.Id">@weapon.DisplayName (@InventoryLabel(weapon.Id))</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </div>
+                                <label class="angle-gauge" style="@AngleGaugeStyle">
+                                    <span>Angle <strong>@_state.PlayerTank.TurretAngle.ToString("0")</strong></span>
+                                    <span class="dial-face" aria-hidden="true">
+                                        <span class="dial-arc"></span>
+                                        <span class="dial-needle"></span>
+                                        <span class="dial-hub"></span>
+                                    </span>
+                                    <input class="dial-scrub" type="range" min="5" max="85" step="1" value="@_state.PlayerTank.TurretAngle" @oninput="HandleAngleInputAsync" aria-label="Angle" />
                                 </label>
-                                <label>
-                                    Angle <strong>@_state.PlayerTank.TurretAngle.ToString("0")</strong>
-                                    <input type="range" min="5" max="85" step="1" value="@_state.PlayerTank.TurretAngle" @oninput="HandleAngleInputAsync" />
-                                </label>
-                                <label>
-                                    Velocity <strong>@_power</strong>
-                                    <input type="range" min="1" max="100" step="1" @bind="_power" @bind:event="oninput" />
+                                <label class="velocity-control">
+                                    <span>Velocity <strong>@_power</strong></span>
+                                    <input type="range" min="1" max="100" step="1" @bind="_power" @bind:event="oninput" aria-label="Velocity" />
                                 </label>
                                 <button class="fire-button floating-fire" disabled="@(!CanFirePlayer)" @onclick="FirePlayerAsync">Fire</button>
                             </div>
+                        }
+                        else
+                        {
+                            <button class="command-toggle" title="@BattlePanelToggleTitle" @onclick="ToggleBattlePanel">Wide</button>
                         }
                     </div>
                 }
@@ -263,6 +272,17 @@
         : string.Empty;
 
     private string BattlePanelToggleTitle => _battlePanelCollapsed ? "Show command panel" : "Hide command panel";
+
+    private string AngleGaugeStyle => FormattableString.Invariant($"--angle-rotation:{AngleGaugeRotation:0.###}deg;");
+
+    private float AngleGaugeRotation
+    {
+        get
+        {
+            var angle = _state?.PlayerTank.TurretAngle ?? 45f;
+            return (((angle - 5f) / 80f) * 140f) - 70f;
+        }
+    }
 
     private string WindText => _state is null
         ? "0"
