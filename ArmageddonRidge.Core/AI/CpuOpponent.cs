@@ -9,19 +9,12 @@ namespace ArmageddonRidge.Core.AI;
 /// <summary>
 /// Deterministic CPU planner that scores simulated shots for the current difficulty.
 /// </summary>
-public sealed class CpuOpponent
+/// <param name="weapons">Weapon catalog used for candidate lookup.</param>
+/// <param name="simulator">Projectile simulator used for deterministic candidate scoring.</param>
+public sealed class CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simulator)
 {
-    private readonly WeaponCatalog _weapons;
-    private readonly ProjectileSimulator _simulator;
-
-    /// <summary>
-    /// Creates a CPU opponent using the shared weapon catalog and projectile simulator.
-    /// </summary>
-    public CpuOpponent(WeaponCatalog weapons, ProjectileSimulator simulator)
-    {
-        _weapons = weapons;
-        _simulator = simulator;
-    }
+    private readonly WeaponCatalog _weapons = weapons;
+    private readonly ProjectileSimulator _simulator = simulator;
 
     /// <summary>
     /// Chooses the CPU weapon, angle, and power for the current turn.
@@ -30,11 +23,18 @@ public sealed class CpuOpponent
     {
         var watch = Stopwatch.StartNew();
         var profile = CpuDifficultyProfile.For(settings.Difficulty);
-        var candidates = CandidateWeapons(state.CpuTank, settings).ToArray();
+        var candidates = _weapons.All;
         var best = new CpuShotPlan(WeaponIds.PeaShell, 140, 60, "Calculating... emotionally.", 0, 0);
 
-        foreach (var weapon in candidates)
+        for (var candidateIndex = 0; candidateIndex < candidates.Count; candidateIndex++)
         {
+            var weapon = candidates[candidateIndex];
+            if (weapon.Id != WeaponIds.PeaShell)
+            {
+                if (!state.CpuTank.HasWeapon(weapon.Id)) continue;
+                if (!settings.EnableNuclearWeapons && weapon.Category == WeaponCategory.Nuclear) continue;
+            }
+
             if (weapon.Id == WeaponIds.DarkEagle)
             {
                 var guidedScore = (weapon.MaxDamage * 12f)
@@ -90,26 +90,6 @@ public sealed class CpuOpponent
 
         watch.Stop();
         return best with { PlanningMs = watch.Elapsed.TotalMilliseconds };
-    }
-
-    private IEnumerable<WeaponDefinition> CandidateWeapons(Tank tank, MatchSettings settings)
-    {
-        yield return _weapons.Get(WeaponIds.PeaShell);
-
-        foreach (var weapon in _weapons.All)
-        {
-            if (weapon.Id == WeaponIds.PeaShell || !tank.HasWeapon(weapon.Id))
-            {
-                continue;
-            }
-
-            if (!settings.EnableNuclearWeapons && weapon.Category == WeaponCategory.Nuclear)
-            {
-                continue;
-            }
-
-            yield return weapon;
-        }
     }
 
     private static float Noise(GameState state, string weaponId, int angle, int power, int salt, float magnitude) =>

@@ -7,6 +7,9 @@ namespace ArmageddonRidge.Core.Models;
 /// </summary>
 public sealed class Tank
 {
+    private int _health = GameConstants.StartingHealth;
+    private int _maxHealth = GameConstants.StartingHealth;
+
     /// <summary>
     /// Stable identifier used by game rules and renderer snapshots.
     /// </summary>
@@ -30,12 +33,24 @@ public sealed class Tank
     /// <summary>
     /// Remaining hull health.
     /// </summary>
-    public int Health { get; set; } = GameConstants.StartingHealth;
+    public int Health
+    {
+        get => _health;
+        set => _health = Math.Clamp(value, 0, _maxHealth);
+    }
 
     /// <summary>
     /// Maximum hull health after upgrades.
     /// </summary>
-    public int MaxHealth { get; set; } = GameConstants.StartingHealth;
+    public int MaxHealth
+    {
+        get => _maxHealth;
+        set
+        {
+            _maxHealth = Math.Max(0, value);
+            if (_health > _maxHealth) _health = _maxHealth;
+        }
+    }
 
     /// <summary>
     /// Current shield pool that absorbs blockable blast damage.
@@ -82,10 +97,7 @@ public sealed class Tank
     /// </summary>
     public int GetInventoryCount(string weaponId)
     {
-        if (!Inventory.TryGetValue(weaponId, out var count))
-        {
-            return 0;
-        }
+        if (!Inventory.TryGetValue(weaponId, out var count)) return 0;
 
         return count;
     }
@@ -100,10 +112,7 @@ public sealed class Tank
     /// </summary>
     public void AddWeapon(string weaponId, int count)
     {
-        if (!Inventory.TryAdd(weaponId, count))
-        {
-            Inventory[weaponId] += count;
-        }
+        if (!Inventory.TryAdd(weaponId, count)) Inventory[weaponId] += count;
     }
 
     /// <summary>
@@ -111,10 +120,7 @@ public sealed class Tank
     /// </summary>
     public void ConsumeWeapon(string weaponId)
     {
-        if (weaponId == WeaponIds.PeaShell)
-        {
-            return;
-        }
+        if (weaponId == WeaponIds.PeaShell) return;
 
         if (!Inventory.TryGetValue(weaponId, out var count) || count <= 0)
         {

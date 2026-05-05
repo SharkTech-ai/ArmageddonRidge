@@ -1,0 +1,762 @@
+using System.Numerics;
+using ArmageddonRidge.Client.Services;
+using ArmageddonRidge.Core;
+using ArmageddonRidge.Core.Content;
+using ArmageddonRidge.Core.Game;
+using ArmageddonRidge.Core.Models;
+using ArmageddonRidge.Core.Terrain;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
+
+namespace ArmageddonRidge.Client.Pages;
+
+public partial class Home
+{
+    private static readonly Difficulty[] DifficultyOptions = Enum.GetValues<Difficulty>();
+    private static readonly DemoShot[] DemoShots =
+    [
+        new("Heavy shell", "demo-shot-a"),
+        new("Drone swarm", "demo-shot-b"),
+        new("Bunker buster", "demo-shot-c")
+    ];
+
+    private ElementReference _canvas;
+    private GameState? _state;
+    private MatchSettings _settings = new();
+    private Difficulty _difficulty = Difficulty.Normal;
+    private int _power = 65;
+    private bool _canFire = true;
+    private bool _showPerf;
+    private bool _settingsOpen;
+    private bool _battlePanelCollapsed;
+    private bool _screenShake = true;
+    private bool _reducedMotion;
+    private bool _targetingComputerEnabledByDefault = true;
+    private float _sfxVolume = 0.9f;
+    private int _startingCash = GameConstants.StartingCash;
+    private int _fps = 60;
+    private double _frameMs = 16.7;
+    private double _renderMs;
+    private int _bestScore;
+    private bool _rendererReady;
+    private bool _shotPlaybackInProgress;
+    private int _terrainRevision;
+    private int _lastSentTerrainRevision = -1;
+    private CancellationTokenSource? _perfLoop;
+    private bool _playerHurt;
+    private bool _cpuHurt;
+    private bool _playerShieldHit;
+    private bool _cpuShieldHit;
+    private int _damagePulse;
+    private bool _demoModeActive = true;
+    private bool _battlePanelDragging;
+    private double _battlePanelDragStartX;
+    private double _battlePanelDragStartY;
+    private double _battlePanelStartOffsetX;
+    private double _battlePanelStartOffsetY;
+    private double _battlePanelOffsetX;
+    private double _battlePanelOffsetY;
+    private WeaponDefinition[] _allWeapons = [];
+    private UpgradeDefinition[] _allUpgrades = [];
+    private string[] _unlockedWeaponIds = [];
+    private WeaponDefinition[] _availablePlayerWeapons = [];
+
+    private IReadOnlyCollection<WeaponDefinition> AllWeapons => _allWeapons;
+
+    private IReadOnlyCollection<UpgradeDefinition> AllUpgrades => _allUpgrades;
+
+    private IReadOnlyList<WeaponDefinition> AvailablePlayerWeapons => _availablePlayerWeapons;
+
+    private bool AnyTankHurt => _playerHurt || _cpuHurt;
+
+    private bool AnyTankShieldHit => _playerShieldHit || _cpuShieldHit;
+
+    private bool AnyTankFeedback => AnyTankHurt || AnyTankShieldHit;
+
+    private bool DemoModeVisible => _demoModeActive && (_state is null || _state.Phase == GamePhase.Shop);
+
+    private bool CanFirePlayer => _canFire && _state?.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Player;
+
+    private string BattlefieldPanelCss =>
+        $"battlefield-panel{(_playerHurt ? " player-hurt" : "")}{(_cpuHurt ? " cpu-hurt" : "")}{(_playerShieldHit ? " player-shield-hit" : "")}{(_cpuShieldHit ? " cpu-shield-hit" : "")}";
+
+    private string BattleHudCss =>
+        $"battle-hud{(AnyTankHurt ? " hurt-flash" : "")}{(AnyTankShieldHit ? " shield-flash" : "")}";
+
+    private string PlayerVersusHealthCss =>
+        $"versus-health player{(_playerHurt ? " is-hurt" : "")}{(_playerShieldHit ? " is-shield-hit" : "")}";
+
+    private string CpuVersusHealthCss =>
+        $"versus-health cpu{(_cpuHurt ? " is-hurt" : "")}{(_cpuShieldHit ? " is-shield-hit" : "")}";
+
+    private string FloatingCommandCss =>
+        $"floating-command{(_battlePanelCollapsed ? " is-expanded" : " is-compact")}{(_battlePanelDragging ? " is-dragging" : "")}";
+
+    private string BattlePanelStyle =>
+        FormattableString.Invariant($"--battle-panel-dx:{_battlePanelOffsetX:0.###}px;--battle-panel-dy:{_battlePanelOffsetY:0.###}px;");
+
+    private string BattleLayoutCss => _state?.Phase == GamePhase.Battle
+        ? (_battlePanelCollapsed ? "is-battle panel-collapsed" : "is-battle")
+        : string.Empty;
+
+    private string BattlePanelToggleTitle => _battlePanelCollapsed ? "Hide command panel" : "Show command panel";
+
+    private string AngleGaugeStyle => FormattableString.Invariant($"--angle-rotation:{AngleGaugeRotation:0.###}deg;");
+
+    private float AngleGaugeRotation
+    {
+        get
+        {
+            var angle = _state?.PlayerTank.TurretAngle ?? 45f;
+            return (((angle - 5f) / 80f) * 140f) - 70f;
+        }
+    }
+
+    private string WindText => _state is null
+        ? "0"
+        : $"{(_state.Wind > 0 ? "->" : _state.Wind < 0 ? "<-" : "--")} {Math.Abs(_state.Wind)}";
+
+    private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
+
+    private string HintText => HasTargetingComputer
+        ? "Targeting computer estimates the launch arc. Wind still matters."
+        : HasTracerRounds
+            ? "Tracer rounds help you read the last shot trail."
+            : "Watch the last trail, then correct angle and power.";
+
+    protected override void OnInitialized()
+    {
+        _allWeapons = Weapons.All.ToArray();
+        _allUpgrades = Upgrades.All.ToArray();
+        _unlockedWeaponIds = BuildUnlockedWeaponIds(_allWeapons);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Audio.InitializeAsync();
+            var save = await Storage.GetAsync<SaveGame>("armageddon-ridge-save");
+            if (save is not null)
+            {
+                _bestScore = save.BestScore;
+                _difficulty = save.Settings.Difficulty;
+                _sfxVolume = save.Settings.SfxVolume;
+                _screenShake = save.Settings.ScreenShake;
+                _reducedMotion = save.Settings.ReducedMotion;
+                _targetingComputerEnabledByDefault = save.Settings.TargetingComputerEnabledByDefault;
+                _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
+                await Audio.SetVolumeAsync(_sfxVolume);
+                StateHasChanged();
+            }
+        }
+
+        if (_state is not null && !_shotPlaybackInProgress)
+        {
+            await EnsureRendererAsync();
+            await RenderSceneAsync();
+        }
+    }
+
+    private async Task NewDuelAsync()
+    {
+        _settings = new MatchSettings(Difficulty: _difficulty, StartingCash: _startingCash, TerrainSeed: Random.Shared.Next(10_000, 99_999));
+        _state = Engine.NewMatch(_settings);
+        _demoModeActive = true;
+        ClearDamageFeedback();
+        RefreshPlayerWeapons();
+        ResetRenderCache();
+        await Audio.UnlockAsync();
+        await Audio.PlayAsync("menu");
+    }
+
+    private async Task StartBattleAsync()
+    {
+        if (_state is null) return;
+
+        Engine.StartBattle(_state);
+        _demoModeActive = false;
+        _battlePanelCollapsed = true;
+        ResetBattlePanelDrag();
+        await Audio.PlayAsync("menu");
+        await RenderSceneAsync();
+    }
+
+    private async Task NextRoundAsync()
+    {
+        if (_state is null) return;
+
+        Engine.StartNextRound(_state, _settings);
+        ClearDamageFeedback();
+        RefreshPlayerWeapons();
+        MarkTerrainChanged();
+        await RenderSceneAsync();
+    }
+
+    private async Task FirePlayerAsync()
+    {
+        if (!_canFire || _state is null || _state.CurrentTurn != TurnOwner.Player || _state.Phase != GamePhase.Battle) return;
+
+        _canFire = false;
+        try
+        {
+            await Audio.UnlockAsync();
+            var playerHealthBefore = _state.PlayerTank.Health;
+            var cpuHealthBefore = _state.CpuTank.Health;
+            var playerShieldBefore = _state.PlayerTank.Shield;
+            var cpuShieldBefore = _state.CpuTank.Shield;
+            var playerPreShotScene = BuildScene();
+            var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
+            await PlayResolutionAsync(playerPreShotScene, playerShot);
+            await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+            RefreshPlayerWeapons();
+
+            if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
+            {
+                await Task.Delay(_reducedMotion ? 250 : 700);
+                playerHealthBefore = _state.PlayerTank.Health;
+                cpuHealthBefore = _state.CpuTank.Health;
+                playerShieldBefore = _state.PlayerTank.Shield;
+                cpuShieldBefore = _state.CpuTank.Shield;
+                var cpuPreShotScene = BuildScene();
+                var cpuShot = Engine.FireCurrentTurn(_state, _settings);
+                await PlayResolutionAsync(cpuPreShotScene, cpuShot);
+                await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+            }
+
+            if (_state.Phase == GamePhase.RoundOver) await PersistSaveAsync();
+        }
+        finally
+        {
+            RefreshPlayerWeapons();
+            _canFire = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PlayResolutionAsync(object preShotScene, ShotResolution resolution)
+    {
+        _shotPlaybackInProgress = true;
+        try
+        {
+            var hasNuclear = HasNuclearExplosion(resolution.Explosions);
+            await Audio.PlayAsync(hasNuclear ? "nuclear" : "fire");
+            await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion);
+            await Audio.PlayAsync(hasNuclear || HasLargeExplosion(resolution.Explosions) ? "largeExplosion" : "smallExplosion");
+        }
+        catch (JSException ex)
+        {
+            _state?.EventLog.Add($"Recovered from renderer playback error: {ex.Message}");
+        }
+        finally
+        {
+            _shotPlaybackInProgress = false;
+        }
+
+        if (resolution.Performance.TerrainColumnsTouched > 0) MarkTerrainChanged();
+
+        await RenderSceneCoreAsync(force: true);
+    }
+
+    private async Task BuyWeaponAsync(string weaponId)
+    {
+        if (_state is not null && Engine.BuyWeapon(_state, weaponId))
+        {
+            RefreshPlayerWeapons();
+            await Audio.PlayAsync("menu");
+        }
+    }
+
+    private async Task BuyUpgradeAsync(UpgradeType upgrade)
+    {
+        if (_state is not null && Engine.BuyUpgrade(_state, upgrade))
+        {
+            await Audio.PlayAsync("shield");
+            StateHasChanged();
+        }
+    }
+
+    private Task RenderSceneAsync() => RenderSceneCoreAsync(force: false);
+
+    private async Task RenderSceneCoreAsync(bool force)
+    {
+        if (_state is null || (_shotPlaybackInProgress && !force)) return;
+
+        await EnsureRendererAsync();
+        var includeTerrain = force || _lastSentTerrainRevision != _terrainRevision;
+        var stats = await Renderer.RenderAsync(BuildScene(includeTerrain));
+        if (includeTerrain) _lastSentTerrainRevision = _terrainRevision;
+
+        ApplyStats(stats);
+    }
+
+    private async Task EnsureRendererAsync()
+    {
+        if (_rendererReady || _state is null) return;
+
+        await Renderer.InitializeAsync(_canvas);
+        _rendererReady = true;
+    }
+
+    private object BuildScene(bool includeTerrain = true)
+    {
+        if (_state is null) return new { };
+
+        object? terrain = includeTerrain ? _state.Terrain.SolidTop.ToArray() : null;
+        return new
+        {
+            world = new { width = GameConstants.WorldWidth, height = GameConstants.WorldHeight },
+            terrain,
+            round = _state.RoundNumber,
+            weather = WeatherDto(_state),
+            wind = _state.Wind,
+            phase = _state.Phase.ToString(),
+            selectedWeapon = _state.SelectedWeaponId,
+            previewTrail = PreviewTrailDto(),
+            radiation = RadiationDto(_state.RadiationZones),
+            player = TankDto(_state.PlayerTank, _state.Terrain),
+            cpu = TankDto(_state.CpuTank, _state.Terrain)
+        };
+    }
+
+    private void ResetRenderCache()
+    {
+        _terrainRevision++;
+        _lastSentTerrainRevision = -1;
+    }
+
+    private void MarkTerrainChanged() => _terrainRevision++;
+
+    private static object TankDto(Tank tank, TerrainMask terrain) => new
+    {
+        id = tank.Id,
+        x = tank.Position.X,
+        y = tank.Position.Y,
+        angle = tank.TurretAngle,
+        health = TankHealth(tank),
+        shield = MathF.Max(0, tank.Shield),
+        isCpu = tank.IsCpu,
+        terrainY = terrain.GetSurfaceY(tank.Position.X),
+        buriedDepth = MathF.Max(0, tank.Position.Y - terrain.GetSurfaceY(tank.Position.X))
+    };
+
+    private static object WeatherDto(GameState state)
+    {
+        var index = Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber)) % 4;
+        var type = index switch
+        {
+            1 => "rain",
+            2 => "snow",
+            3 => "storm",
+            _ => "clear"
+        };
+        var intensity = 0.34f + ((Math.Abs(HashCode.Combine(state.RandomSeed, state.RoundNumber, state.Wind)) % 36) / 100f);
+        return new { type, intensity };
+    }
+
+    private static object[] RadiationDto(IReadOnlyList<RadiationZone> zones)
+    {
+        var radiation = new object[zones.Count];
+        for (var i = 0; i < zones.Count; i++)
+        {
+            var zone = zones[i];
+            radiation[i] = new
+            {
+                x = zone.Center.X,
+                y = zone.Center.Y,
+                radius = zone.Radius,
+                turns = zone.TurnsRemaining,
+                visualKind = zone.VisualKind.ToString(),
+                lava = zone.VisualKind == ShotVisualKind.Lava || zone.VisualKind == ShotVisualKind.Fire
+            };
+        }
+
+        return radiation;
+    }
+
+    private bool HasTracerRounds => _state?.PlayerTank.Upgrades.Contains(UpgradeType.TracerRounds) == true;
+
+    private bool HasTargetingComputer => _targetingComputerEnabledByDefault || _state?.PlayerTank.Upgrades.Contains(UpgradeType.TargetingComputer) == true;
+
+    private object PreviewTrailDto()
+    {
+        if (_state is null || !HasTargetingComputer) return EmptyPreview();
+
+        var trail = Engine.PreviewPlayerShot(_state, _state.PlayerTank.TurretAngle, _power);
+        if (trail.Count < 3) return EmptyPreview();
+
+        var apexIndex = 0;
+        var apexY = float.MaxValue;
+        for (var i = 0; i < trail.Count; i++)
+        {
+            if (trail[i].Y < apexY)
+            {
+                apexY = trail[i].Y;
+                apexIndex = i;
+            }
+        }
+
+        var path = new List<object>(Math.Min(48, apexIndex + 1));
+        var step = Math.Max(1, apexIndex / 42);
+        for (var i = 0; i <= apexIndex; i += step)
+        {
+            var point = trail[i];
+            path.Add(new { x = point.X, y = point.Y });
+        }
+
+        var apex = trail[apexIndex];
+        path.Add(new { x = apex.X, y = apex.Y });
+
+        var remaining = trail.Count - apexIndex - 1;
+        if (remaining <= 0) return new { path = path.ToArray(), cone = Array.Empty<object>() };
+
+        var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.325f), 2, 40);
+        var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
+        var direction = coneCenter - apex;
+        if (direction.LengthSquared() < 0.001f) return new { path = path.ToArray(), cone = Array.Empty<object>() };
+
+        direction = Vector2.Normalize(direction);
+        var normal = new Vector2(-direction.Y, direction.X);
+        var distance = Vector2.Distance(apex, coneCenter);
+        var jitter = TinyPreviewNoise(_state.RandomSeed, _state.RoundNumber, _state.PlayerTank.TurretAngle, _power);
+        var width = Math.Clamp((distance * 0.075f) + MathF.Abs(jitter), 10f, 28f);
+        var left = coneCenter + (normal * (width + jitter));
+        var right = coneCenter - (normal * (width - jitter * 0.5f));
+
+        return new
+        {
+            path = path.ToArray(),
+            cone = new object[]
+            {
+                new { x = apex.X, y = apex.Y },
+                new { x = left.X, y = left.Y },
+                new { x = right.X, y = right.Y }
+            }
+        };
+    }
+
+    private static object EmptyPreview() => new { path = Array.Empty<object>(), cone = Array.Empty<object>() };
+
+    private static float TinyPreviewNoise(int seed, int round, float angle, int power)
+    {
+        var hash = HashCode.Combine(seed, round, (int)MathF.Round(angle * 10), power);
+        return (((hash & int.MaxValue) % 401) - 200) / 100f;
+    }
+
+    private string InventoryLabel(string weaponId)
+    {
+        var count = _state?.PlayerTank.GetInventoryCount(weaponId) ?? 0;
+        return weaponId == WeaponIds.PeaShell || count < 0 ? "inf" : count.ToString();
+    }
+
+    private static int TankHealth(Tank tank) => Math.Max(0, tank.Health);
+
+    private static string TankHealthWidth(Tank tank) =>
+        $"{Math.Clamp(TankHealth(tank) / (float)Math.Max(tank.MaxHealth, 1), 0, 1) * 100:0}%";
+
+    private static string TankShieldWidth(Tank tank) =>
+        $"{Math.Clamp(MathF.Max(0, tank.Shield) / 120f, 0, 1) * 100:0}%";
+
+    private async Task ApplyDamageFeedbackAsync(int playerHealthBefore, int cpuHealthBefore, float playerShieldBefore, float cpuShieldBefore)
+    {
+        if (_state is null) return;
+
+        _playerHurt = TankHealth(_state.PlayerTank) < Math.Max(0, playerHealthBefore);
+        _cpuHurt = TankHealth(_state.CpuTank) < Math.Max(0, cpuHealthBefore);
+        _playerShieldHit = _state.PlayerTank.Shield < playerShieldBefore;
+        _cpuShieldHit = _state.CpuTank.Shield < cpuShieldBefore;
+
+        if (!AnyTankFeedback) return;
+
+        var pulse = ++_damagePulse;
+        await InvokeAsync(StateHasChanged);
+        _ = ClearDamageFeedbackAsync(pulse);
+    }
+
+    private async Task ClearDamageFeedbackAsync(int pulse)
+    {
+        await Task.Delay(_reducedMotion ? 180 : 760);
+        if (pulse != _damagePulse) return;
+
+        ClearDamageFeedback();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearDamageFeedback()
+    {
+        _playerHurt = false;
+        _cpuHurt = false;
+        _playerShieldHit = false;
+        _cpuShieldHit = false;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (_state is null) return;
+
+        switch (args.Key)
+        {
+            case "ArrowLeft":
+                _state.PlayerTank.TurretAngle = Math.Max(5, _state.PlayerTank.TurretAngle - (args.ShiftKey ? 5 : 1));
+                await RenderSceneAsync();
+                break;
+            case "ArrowRight":
+                _state.PlayerTank.TurretAngle = Math.Min(85, _state.PlayerTank.TurretAngle + (args.ShiftKey ? 5 : 1));
+                await RenderSceneAsync();
+                break;
+            case "ArrowUp":
+                _power = Math.Min(100, _power + 2);
+                break;
+            case "ArrowDown":
+                _power = Math.Max(1, _power - 2);
+                break;
+            case " ":
+                await FirePlayerAsync();
+                break;
+            case "Tab":
+                CycleWeapon();
+                break;
+            case "Escape":
+                ToggleSettings();
+                break;
+            case "`":
+                TogglePerf();
+                break;
+            case "h":
+            case "H":
+                ToggleBattlePanel();
+                break;
+        }
+    }
+
+    private async Task HandleAngleInputAsync(ChangeEventArgs args)
+    {
+        if (_state is null || !float.TryParse(args.Value?.ToString(), out var angle)) return;
+
+        _state.PlayerTank.TurretAngle = Math.Clamp(angle, 5, 85);
+        await RenderSceneAsync();
+    }
+
+    private void CycleWeapon()
+    {
+        if (_state is null || _availablePlayerWeapons.Length == 0) return;
+
+        var current = -1;
+        for (var i = 0; i < _availablePlayerWeapons.Length; i++)
+        {
+            if (_availablePlayerWeapons[i].Id == _state.SelectedWeaponId)
+            {
+                current = i;
+                break;
+            }
+        }
+
+        _state.SelectedWeaponId = _availablePlayerWeapons[(current + 1 + _availablePlayerWeapons.Length) % _availablePlayerWeapons.Length].Id;
+    }
+
+    private void TogglePerf()
+    {
+        _showPerf = !_showPerf;
+        if (_showPerf) StartPerfLoop();
+        else StopPerfLoop();
+    }
+
+    private void ToggleSettings() => _settingsOpen = !_settingsOpen;
+
+    private void ToggleBattlePanel()
+    {
+        if (_state?.Phase == GamePhase.Battle) _battlePanelCollapsed = !_battlePanelCollapsed;
+    }
+
+    private void BeginBattlePanelDrag(PointerEventArgs args)
+    {
+        if (args.Button != 0) return;
+
+        _battlePanelDragging = true;
+        _battlePanelDragStartX = args.ClientX;
+        _battlePanelDragStartY = args.ClientY;
+        _battlePanelStartOffsetX = _battlePanelOffsetX;
+        _battlePanelStartOffsetY = _battlePanelOffsetY;
+    }
+
+    private void HandleBattlePanelPointerMove(PointerEventArgs args)
+    {
+        if (!_battlePanelDragging) return;
+
+        _battlePanelOffsetX = Math.Clamp(_battlePanelStartOffsetX + args.ClientX - _battlePanelDragStartX, -420, 260);
+        _battlePanelOffsetY = Math.Clamp(_battlePanelStartOffsetY + args.ClientY - _battlePanelDragStartY, -260, 260);
+    }
+
+    private void EndBattlePanelDrag(PointerEventArgs args) => _battlePanelDragging = false;
+
+    private void ResetBattlePanelDrag()
+    {
+        _battlePanelDragging = false;
+        _battlePanelOffsetX = 0;
+        _battlePanelOffsetY = 0;
+    }
+
+    private async Task ApplyAudioSettingsAsync()
+    {
+        await Audio.SetVolumeAsync(_sfxVolume);
+        await PersistSaveAsync();
+    }
+
+    private async Task HandleScreenShakeChangedAsync(ChangeEventArgs args)
+    {
+        _screenShake = CheckedValue(args);
+        await PersistSaveAsync();
+    }
+
+    private async Task HandleReducedMotionChangedAsync(ChangeEventArgs args)
+    {
+        _reducedMotion = CheckedValue(args);
+        await PersistSaveAsync();
+    }
+
+    private async Task HandleTargetingComputerChangedAsync(ChangeEventArgs args)
+    {
+        _targetingComputerEnabledByDefault = CheckedValue(args);
+        await PersistSaveAsync();
+        if (_state?.Phase == GamePhase.Battle) await RenderSceneAsync();
+    }
+
+    private async Task HandleStartingCashChangedAsync(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var cash)) return;
+
+        _startingCash = Math.Clamp(cash, 500, 10_000);
+        await PersistSaveAsync();
+    }
+
+    private async Task PersistSaveAsync()
+    {
+        var cash = _state?.PlayerTank.Cash ?? 0;
+        _bestScore = Math.Max(_bestScore, cash);
+        var save = new SaveGame(
+            _bestScore,
+            _state?.RoundNumber ?? 1,
+            _state?.PlayerTank.IsDestroyed == true ? 1 : 0,
+            _unlockedWeaponIds,
+            _state?.SelectedWeaponId ?? WeaponIds.PeaShell,
+            new GameSettings(
+                SfxVolume: _sfxVolume,
+                ScreenShake: _screenShake,
+                ReducedMotion: _reducedMotion,
+                Difficulty: _difficulty,
+                StartingCash: _startingCash,
+                TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault));
+        await Storage.SetAsync("armageddon-ridge-save", save);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopPerfLoop();
+        await Renderer.DisposeAsync();
+        await Audio.DisposeAsync();
+    }
+
+    private void ApplyStats(RenderStats? stats)
+    {
+        if (stats is null) return;
+
+        _fps = stats.Fps;
+        _frameMs = stats.FrameMs;
+        _renderMs = stats.RenderMs;
+    }
+
+    private void StartPerfLoop()
+    {
+        StopPerfLoop();
+        _perfLoop = new CancellationTokenSource();
+        _ = PollPerfAsync(_perfLoop.Token);
+    }
+
+    private void StopPerfLoop()
+    {
+        _perfLoop?.Cancel();
+        _perfLoop?.Dispose();
+        _perfLoop = null;
+    }
+
+    private async Task PollPerfAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(250, cancellationToken);
+                ApplyStats(await Renderer.GetStatsAsync());
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private void RefreshPlayerWeapons()
+    {
+        if (_state is null)
+        {
+            _availablePlayerWeapons = [];
+            return;
+        }
+
+        var weapons = new List<WeaponDefinition>(_allWeapons.Length);
+        for (var i = 0; i < _allWeapons.Length; i++)
+        {
+            var weapon = _allWeapons[i];
+            if (_state.PlayerTank.HasWeapon(weapon.Id) || weapon.Id == WeaponIds.PeaShell) weapons.Add(weapon);
+        }
+
+        _availablePlayerWeapons = weapons.ToArray();
+        EnsureSelectedWeaponIsAvailable();
+    }
+
+    private void EnsureSelectedWeaponIsAvailable()
+    {
+        if (_state is null || _availablePlayerWeapons.Length == 0) return;
+
+        for (var i = 0; i < _availablePlayerWeapons.Length; i++)
+        {
+            if (_availablePlayerWeapons[i].Id == _state.SelectedWeaponId) return;
+        }
+
+        _state.SelectedWeaponId = _availablePlayerWeapons[0].Id;
+    }
+
+    private static string[] BuildUnlockedWeaponIds(IReadOnlyList<WeaponDefinition> weapons)
+    {
+        var ids = new string[weapons.Count];
+        for (var i = 0; i < weapons.Count; i++) ids[i] = weapons[i].Id;
+        return ids;
+    }
+
+    private static bool CheckedValue(ChangeEventArgs args) =>
+        args.Value is bool value ? value : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+
+    private static bool HasNuclearExplosion(IReadOnlyList<ExplosionResult> explosions)
+    {
+        for (var i = 0; i < explosions.Count; i++)
+        {
+            if (explosions[i].Nuclear) return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasLargeExplosion(IReadOnlyList<ExplosionResult> explosions)
+    {
+        for (var i = 0; i < explosions.Count; i++)
+        {
+            if (explosions[i].DamageRadius > 80) return true;
+        }
+
+        return false;
+    }
+
+    private sealed record DemoShot(string Name, string CssClass);
+}

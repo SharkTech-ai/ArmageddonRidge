@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using ArmageddonRidge.Core.Models;
 
 namespace ArmageddonRidge.Core.Content;
@@ -7,15 +8,17 @@ namespace ArmageddonRidge.Core.Content;
 /// </summary>
 public sealed class WeaponCatalog
 {
-    private readonly IReadOnlyDictionary<string, WeaponDefinition> _weapons;
+    private readonly WeaponDefinition[] _all;
+    private readonly IReadOnlyList<WeaponDefinition> _allView;
+    private readonly FrozenDictionary<string, WeaponDefinition> _weapons;
 
     /// <summary>
     /// Creates the default MVP weapon catalog.
     /// </summary>
     public WeaponCatalog()
     {
-        var weapons = new[]
-        {
+        _all =
+        [
             new WeaponDefinition(WeaponIds.PeaShell, "Pea Shell", WeaponCategory.BasicBallistic, 0, 25, 28, 34, 1f, 1f, 1f, WeaponBehaviorType.Ballistic, true, 0f, 1.5f, "Free basic shot."),
             new WeaponDefinition(WeaponIds.HeavyShell, "Heavy Shell", WeaponCategory.BasicBallistic, 75, 45, 36, 42, 0.95f, 1f, 0.85f, WeaponBehaviorType.Ballistic, true, 0f, 1.5f, "Reliable mid-weight damage."),
             new WeaponDefinition(WeaponIds.BabyMissile, "Baby Missile", WeaponCategory.AreaDamage, 125, 60, 42, 48, 1.05f, 1f, 1f, WeaponBehaviorType.Ballistic, true, 0.05f, 1.4f, "A stronger standard projectile."),
@@ -32,15 +35,16 @@ public sealed class WeaponCatalog
             new WeaponDefinition(WeaponIds.Gbu57Mop, "GBU-57 MOP", WeaponCategory.AreaDamage, 950, 105, 62, 130, 0.82f, 1.55f, 0.08f, WeaponBehaviorType.MultiStagePenetrator, true, 0.12f, 1.35f, "Heavy two-stage bunker buster: surface pop, then a deeper larger blast."),
             new WeaponDefinition(WeaponIds.TacticalNuke, "Tactical Nuke", WeaponCategory.Nuclear, 850, 110, 110, 130, 0.85f, 1f, 0.75f, WeaponBehaviorType.Nuclear, true, 0.25f, 1.2f, "Huge crater, shockwave, and temporary radiation.", RadiationTurns: 2, RadiationDamagePerTurn: 5),
             new WeaponDefinition(WeaponIds.DoomsdayNuke, "Doomsday Nuke", WeaponCategory.Nuclear, 1600, 180, 190, 240, 0.75f, 1f, 0.5f, WeaponBehaviorType.Nuclear, true, 0.4f, 1.1f, "Rare endgame battlefield reset.", RadiationTurns: 3, RadiationDamagePerTurn: 8)
-        };
+        ];
 
-        _weapons = weapons.ToDictionary(static weapon => weapon.Id, StringComparer.OrdinalIgnoreCase);
+        _weapons = _all.ToFrozenDictionary(static weapon => weapon.Id, StringComparer.OrdinalIgnoreCase);
+        _allView = Array.AsReadOnly(_all);
     }
 
     /// <summary>
     /// Gets all available weapon definitions.
     /// </summary>
-    public IReadOnlyCollection<WeaponDefinition> All => _weapons.Values.ToArray();
+    public IReadOnlyList<WeaponDefinition> All => _allView;
 
     /// <summary>
     /// Gets a weapon definition by stable identifier.

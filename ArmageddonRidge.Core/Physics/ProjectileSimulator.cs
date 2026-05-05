@@ -99,31 +99,22 @@ public sealed class ProjectileSimulator
                 nearestOwnerSquared,
                 SegmentDistanceSquared(px, py, nextX, nextY, ownerCenter.X, ownerCenter.Y));
 
-            if (step > 2 && SweptHitsTank(px, py, nextX, nextY, opponentHitbox, out var opponentHit))
+            if (SweptHitsTank(px, py, nextX, nextY, opponentHitbox, GameConstants.ProjectileCollisionRadius, out var opponentHit))
             {
                 return Finish(trail, captureTrail, opponentHit.X, opponentHit.Y, ProjectileStopReason.TankHit, nearestOpponentSquared, nearestOwnerSquared);
             }
 
-            var ownerSegmentTouches = SweptHitsTank(px, py, nextX, nextY, ownerHitbox, out var ownerHit);
+            var ownerSegmentTouches = SweptHitsTank(px, py, nextX, nextY, ownerHitbox, GameConstants.ProjectileCollisionRadius, out var ownerHit);
             if (step > 8 && ownerProjectileHasClearedTank && ownerSegmentTouches)
             {
                 return Finish(trail, captureTrail, ownerHit.X, ownerHit.Y, ProjectileStopReason.OwnerHit, nearestOpponentSquared, nearestOwnerSquared);
             }
 
-            if (!ownerSegmentTouches)
-            {
-                ownerProjectileHasClearedTank = true;
-            }
+            if (!ownerSegmentTouches) ownerProjectileHasClearedTank = true;
 
-            if (terrain.IsSolid(px, py))
-            {
-                return Finish(trail, captureTrail, px, py, ProjectileStopReason.TerrainHit, nearestOpponentSquared, nearestOwnerSquared);
-            }
+            if (terrain.IsSolid(px, py)) return Finish(trail, captureTrail, px, py, ProjectileStopReason.TerrainHit, nearestOpponentSquared, nearestOwnerSquared);
 
-            if (px < -50 || px > terrain.Width + 50 || py > terrain.Height + 80)
-            {
-                return Finish(trail, captureTrail, px, py, ProjectileStopReason.OutOfBounds, nearestOpponentSquared, nearestOwnerSquared);
-            }
+            if (px < -50 || px > terrain.Width + 50 || py > terrain.Height + 80) return Finish(trail, captureTrail, px, py, ProjectileStopReason.OutOfBounds, nearestOpponentSquared, nearestOwnerSquared);
 
             vx = nextVx;
             vy = nextVy;
@@ -144,10 +135,7 @@ public sealed class ProjectileSimulator
         float nearestOwnerSquared)
     {
         var impact = new Vector2(x, y);
-        if (captureTrail)
-        {
-            trail!.Add(impact);
-        }
+        if (captureTrail) trail!.Add(impact);
 
         return new ProjectileSimulationCore(
             trail,
@@ -156,6 +144,9 @@ public sealed class ProjectileSimulator
             MathF.Sqrt(nearestOpponentSquared),
             MathF.Sqrt(nearestOwnerSquared));
     }
+
+    internal static bool SweptHitsTank(Vector2 start, Vector2 end, Tank tank, float padding, out Vector2 hit) =>
+        SweptHitsTank(start.X, start.Y, end.X, end.Y, TankHitbox(tank), padding, out hit);
 
     private static Hitbox TankHitbox(Tank tank)
     {
@@ -172,10 +163,7 @@ public sealed class ProjectileSimulator
         var dx = bx - ax;
         var dy = by - ay;
         var lengthSquared = (dx * dx) + (dy * dy);
-        if (lengthSquared <= 0.0001f)
-        {
-            return DistanceSquared(ax, ay, px, py);
-        }
+        if (lengthSquared <= 0.0001f) return DistanceSquared(ax, ay, px, py);
 
         var t = (((px - ax) * dx) + ((py - ay) * dy)) / lengthSquared;
         t = Math.Clamp(t, 0f, 1f);
@@ -184,9 +172,9 @@ public sealed class ProjectileSimulator
         return DistanceSquared(closestX, closestY, px, py);
     }
 
-    private static bool SweptHitsTank(float ax, float ay, float bx, float by, Hitbox hitbox, out Vector2 hit)
+    private static bool SweptHitsTank(float ax, float ay, float bx, float by, Hitbox hitbox, float padding, out Vector2 hit)
     {
-        var expanded = hitbox.Expand(GameConstants.ProjectileCollisionRadius);
+        var expanded = hitbox.Expand(padding);
         if (HitsTank(ax, ay, expanded))
         {
             hit = new Vector2(ax, ay);

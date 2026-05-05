@@ -37,6 +37,15 @@ public sealed record SaveGame(
 /// <summary>
 /// Browser-local player preferences that affect presentation and starting conditions.
 /// </summary>
+/// <param name="MasterVolume">Overall audio volume multiplier.</param>
+/// <param name="SfxVolume">Sound-effect volume multiplier.</param>
+/// <param name="ScreenShake">Whether large explosions shake the camera.</param>
+/// <param name="ReducedMotion">Whether motion-heavy effects should be shortened or softened.</param>
+/// <param name="ShowTutorialHints">Whether contextual tutorial hints should be shown.</param>
+/// <param name="EnableNuclearWeapons">Whether nuclear weapons are enabled for new matches.</param>
+/// <param name="Difficulty">Default CPU difficulty for new duels.</param>
+/// <param name="StartingCash">Default player cash for new runs.</param>
+/// <param name="TargetingComputerEnabledByDefault">Whether the targeting computer is granted without shop purchase.</param>
 public sealed record GameSettings(
     float MasterVolume = 0.8f,
     float SfxVolume = 0.9f,
@@ -45,4 +54,5 @@ public sealed record GameSettings(
     bool ShowTutorialHints = true,
     bool EnableNuclearWeapons = true,
     Difficulty Difficulty = Difficulty.Normal,
-    int StartingCash = GameConstants.StartingCash);
+    int StartingCash = GameConstants.StartingCash,
+    bool TargetingComputerEnabledByDefault = true);

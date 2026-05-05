@@ -11,7 +11,7 @@
 
     <div class="shop-list">
         <h3>Weapons</h3>
-        @foreach (var weapon in Weapons.Where(static weapon => weapon.Cost > 0))
+        @foreach (var weapon in _visibleWeapons)
         {
             <article class="shop-item">
                 <img src="@IconFor(weapon.Id)" alt="" />
@@ -20,12 +20,12 @@
                     <span>@weapon.Cost cash</span>
                     <small>@weapon.Description</small>
                 </div>
-                <button disabled="@(State.PlayerTank.Cash < weapon.Cost)" @onclick="() => OnBuyWeapon.InvokeAsync(weapon.Id)">Buy</button>
+                <button disabled="@(State.PlayerTank.Cash < weapon.Cost)" @onclick="() => BuyWeaponAsync(weapon.Id)">Buy</button>
             </article>
         }
 
         <h3>Defense</h3>
-        @foreach (var upgrade in Upgrades)
+        @foreach (var upgrade in _visibleUpgrades)
         {
             <article class="shop-item">
                 <img src="@IconFor(upgrade.Type.ToString())" alt="" />
@@ -34,19 +34,8 @@
                     <span>@upgrade.Cost cash</span>
                     <small>@upgrade.Description</small>
                 </div>
-                <button disabled="@(State.PlayerTank.Cash < upgrade.Cost)" @onclick="() => OnBuyUpgrade.InvokeAsync(upgrade.Type)">Buy</button>
+                <button disabled="@(State.PlayerTank.Cash < upgrade.Cost)" @onclick="() => BuyUpgradeAsync(upgrade.Type)">Buy</button>
             </article>
         }
     </div>
 </div>
-
-@code {
-    [Parameter] public required IReadOnlyCollection<WeaponDefinition> Weapons { get; set; }
-    [Parameter] public required IReadOnlyCollection<UpgradeDefinition> Upgrades { get; set; }
-    [Parameter] public required GameState State { get; set; }
-    [Parameter] public required EventCallback<string> OnBuyWeapon { get; set; }
-    [Parameter] public required EventCallback<UpgradeType> OnBuyUpgrade { get; set; }
-    [Parameter] public required EventCallback OnStartBattle { get; set; }
-
-    private static string IconFor(string id) => $"assets/sprites/icons/{id.ToLowerInvariant()}.png";
-}

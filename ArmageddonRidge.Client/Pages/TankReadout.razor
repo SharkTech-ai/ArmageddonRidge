@@ -1,19 +1,10 @@
 @using ArmageddonRidge.Core.Models
 
-<div class="tank-readout">
+<div class="@ReadoutCss">
     <div class="readout-title">
         <span>@Label</span>
-        <strong>@Tank.Health HP</strong>
+        <strong>@CurrentHealth HP</strong>
     </div>
     <div class="bar health"><span style="width:@HealthWidth"></span></div>
     <div class="bar shield"><span style="width:@ShieldWidth"></span></div>
 </div>
-
-@code {
-    [Parameter] public required string Label { get; set; }
-    [Parameter] public required Tank Tank { get; set; }
-
-    private string HealthWidth => $"{Math.Clamp(Tank.Health / (float)Math.Max(Tank.MaxHealth, 1), 0, 1) * 100:0}%";
-
-    private string ShieldWidth => $"{Math.Clamp(Tank.Shield / 120f, 0, 1) * 100:0}%";
-}

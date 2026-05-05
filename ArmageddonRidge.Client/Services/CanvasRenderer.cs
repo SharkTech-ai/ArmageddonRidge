@@ -8,25 +8,17 @@ namespace ArmageddonRidge.Client.Services;
 /// <summary>
 /// Blazor wrapper around the canvas renderer JavaScript module.
 /// </summary>
-public sealed class CanvasRenderer : IAsyncDisposable
+/// <param name="js">Browser JavaScript runtime used to import and call the canvas module.</param>
+public sealed class CanvasRenderer(IJSRuntime js) : IAsyncDisposable
 {
-    private readonly IJSRuntime _js;
     private IJSObjectReference? _module;
-
-    /// <summary>
-    /// Creates a renderer service using the browser JavaScript runtime.
-    /// </summary>
-    public CanvasRenderer(IJSRuntime js)
-    {
-        _js = js;
-    }
 
     /// <summary>
     /// Imports the renderer module and binds it to the provided canvas element.
     /// </summary>
     public async ValueTask InitializeAsync(ElementReference canvas)
     {
-        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", "./js/canvasRenderer.js");
+        _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/canvasRenderer.js");
         await _module.InvokeVoidAsync("initialize", canvas);
     }
 
@@ -54,18 +46,26 @@ public sealed class CanvasRenderer : IAsyncDisposable
         string? weaponId = null,
         bool intercepted = false,
         Vector2? interceptPoint = null,
-        string? ownerTankId = null)
+        string? ownerTankId = null,
+        string? visualKind = null)
     {
         if (_module is null)
         {
             return;
         }
 
-        await _module.InvokeVoidAsync(
-            "playShot",
-            scene,
-            trail.Select(static point => new { x = point.X, y = point.Y }),
-            explosions.Select(explosion => new
+        var trailPayload = new object[trail.Count];
+        for (var i = 0; i < trail.Count; i++)
+        {
+            var point = trail[i];
+            trailPayload[i] = new { x = point.X, y = point.Y };
+        }
+
+        var explosionPayload = new object[explosions.Count];
+        for (var i = 0; i < explosions.Count; i++)
+        {
+            var explosion = explosions[i];
+            explosionPayload[i] = new
             {
                 x = explosion.Center.X,
                 y = explosion.Center.Y,
@@ -81,7 +81,14 @@ public sealed class CanvasRenderer : IAsyncDisposable
                 drone = explosion.VisualKind == ShotVisualKind.DroneSwarm,
                 patriotIntercept = explosion.VisualKind == ShotVisualKind.PatriotIntercept,
                 triggerIndex = explosion.TriggerTrailIndex
-            }),
+            };
+        }
+
+        await _module.InvokeVoidAsync(
+            "playShot",
+            scene,
+            trailPayload,
+            explosionPayload,
             screenShake,
             weaponId,
             new
@@ -89,7 +96,8 @@ public sealed class CanvasRenderer : IAsyncDisposable
                 intercepted,
                 interceptX = interceptPoint?.X,
                 interceptY = interceptPoint?.Y,
-                ownerTankId
+                ownerTankId,
+                visualKind
             });
     }
 
@@ -97,7 +105,7 @@ public sealed class CanvasRenderer : IAsyncDisposable
     /// Plays the shot animation and explosion effects for a complete resolution object.
     /// </summary>
     public ValueTask PlayShotAsync(object scene, ShotResolution resolution, bool screenShake) =>
-        PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId);
+        PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId, resolution.VisualKind.ToString());
 
     /// <summary>
     /// Reads renderer performance counters from the JavaScript module.

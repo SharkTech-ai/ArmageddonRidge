@@ -6,19 +6,12 @@ namespace ArmageddonRidge.Core.Game;
 /// <summary>
 /// Applies shop purchases and end-of-round cash rewards.
 /// </summary>
-public sealed class EconomyService
+/// <param name="weapons">Weapon catalog used for price and inventory lookups.</param>
+/// <param name="upgrades">Upgrade catalog used for price and upgrade effects.</param>
+public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrades)
 {
-    private readonly WeaponCatalog _weapons;
-    private readonly UpgradeCatalog _upgrades;
-
-    /// <summary>
-    /// Creates an economy service backed by the active content catalogs.
-    /// </summary>
-    public EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrades)
-    {
-        _weapons = weapons;
-        _upgrades = upgrades;
-    }
+    private readonly WeaponCatalog _weapons = weapons;
+    private readonly UpgradeCatalog _upgrades = upgrades;
 
     /// <summary>
     /// Attempts to buy one or more copies of a weapon for a tank.
@@ -27,10 +20,7 @@ public sealed class EconomyService
     {
         var weapon = _weapons.Get(weaponId);
         var total = weapon.Cost * count;
-        if (weapon.Cost <= 0 || tank.Cash < total)
-        {
-            return false;
-        }
+        if (weapon.Cost <= 0 || tank.Cash < total) return false;
 
         tank.Cash -= total;
         tank.AddWeapon(weaponId, count);
@@ -43,10 +33,7 @@ public sealed class EconomyService
     public bool BuyUpgrade(Tank tank, UpgradeType upgradeType)
     {
         var upgrade = _upgrades.Get(upgradeType);
-        if (tank.Cash < upgrade.Cost)
-        {
-            return false;
-        }
+        if (tank.Cash < upgrade.Cost) return false;
 
         tank.Cash -= upgrade.Cost;
         tank.Upgrades.Add(upgradeType);

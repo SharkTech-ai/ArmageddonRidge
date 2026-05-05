@@ -9,9 +9,15 @@ let frameMs = 16.7;
 let renderMs = 0;
 let lastScene;
 let cachedTerrain;
+let cachedTerrainTopRef;
+let cachedTerrainTopLength = -1;
+let cachedTerrainTopWorldHeight = 0;
+let cachedTerrainTop = 0;
 let rafId = 0;
 let shotInProgress = false;
 const spriteManifestVersion = "2026-05-04-genesis-v7";
+const patriotInterceptDurationScale = 1.2;
+const patriotReticleScale = 1.65;
 const cloudBands = [
     { x: 90, y: 64, scale: 1.08, speed: 7 },
     { x: 360, y: 104, scale: 0.84, speed: 11 },
@@ -58,17 +64,32 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     const shotScene = prepareScene(scene);
     shotInProgress = true;
     const playbackOptions = options ?? {};
-    let points = Array.from(trail);
+    let points = Array.isArray(trail) ? trail : Array.from(trail);
     if (playbackOptions.intercepted && playbackOptions.interceptX !== undefined && playbackOptions.interceptY !== undefined) {
         const patriotPlayback = createPatriotPlayback(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
         points = patriotPlayback.points;
         playbackOptions.patriot = patriotPlayback;
     }
 
-    const stagedExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) >= 0);
-    const finalExplosions = (explosions ?? []).filter(explosion => Number(explosion.triggerIndex ?? -1) < 0);
+    const activeExplosions = Array.isArray(explosions) ? explosions : Array.from(explosions ?? []);
+    const stagedExplosions = [];
+    const finalExplosions = [];
+    let highImpactShake = false;
+    for (let i = 0; i < activeExplosions.length; i++) {
+        const explosion = activeExplosions[i];
+        if (explosion.nuclear || explosion.radius > 80) {
+            highImpactShake = true;
+        }
+
+        if (Number(explosion.triggerIndex ?? -1) >= 0) {
+            stagedExplosions.push(explosion);
+        } else {
+            finalExplosions.push(explosion);
+        }
+    }
+
     const stagedStarts = new Map();
-    const duration = shotDuration(points.length, weaponId);
+    const duration = shotDuration(points.length, weaponId) * (playbackOptions.intercepted ? patriotInterceptDurationScale : 1);
     const started = performance.now();
 
     return new Promise(resolve => {
@@ -102,12 +123,15 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
         const tick = now => {
             try {
                 const t = Math.min(1, (now - started) / duration);
-                const pathProgress = shotPathProgress(t, weaponId);
+                const basePathProgress = shotPathProgress(t, weaponId);
+                const pathProgress = playbackOptions.patriot
+                    ? patriotIncomingPathProgress(playbackOptions.patriot, basePathProgress)
+                    : basePathProgress;
                 const count = Math.max(1, Math.floor(points.length * pathProgress));
-                const shake = screenShake && explosions?.some(e => e.nuclear || e.radius > 80) ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
+                const shake = screenShake && highImpactShake ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
                 drawScene(shotScene, shake, -shake * 0.4);
-                drawTrail(points, count, weaponId, explosions ?? []);
-                drawPatriotCountermeasure(shotScene, playbackOptions, pathProgress);
+                drawTrail(points, count, weaponId, activeExplosions, playbackOptions.visualKind);
+                drawPatriotCountermeasure(shotScene, playbackOptions, basePathProgress);
                 drawTriggeredExplosions(stagedExplosions, count, now, stagedStarts);
                 if (t < 1) {
                     requestAnimationFrame(tick);
@@ -117,7 +141,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                 requestAnimationFrame(() => {
                     try {
                         drawScene(shotScene, 0, 0);
-                        drawTrail(points, points.length, weaponId, explosions ?? []);
+                        drawTrail(points, points.length, weaponId, activeExplosions, playbackOptions.visualKind);
                         drawPatriotCountermeasure(shotScene, playbackOptions, 1);
                         drawTriggeredExplosions(stagedExplosions, points.length, performance.now(), stagedStarts);
                         finish();
@@ -165,17 +189,37 @@ function createPatriotPlayback(points, intercept) {
     const trimmed = trimTrailToIntercept(points, intercept);
     const apexIndex = findApexIndex(trimmed);
     const apex = trimmed[apexIndex] ?? trimmed[0] ?? intercept;
-    const endIndex = Math.max(1, trimmed.length - 1);
-    const apexProgress = clamp(apexIndex / endIndex, 0.08, 0.84);
+    const apexProgress = clamp((apexIndex + 1) / Math.max(1, trimmed.length), 0.08, 0.84);
+    const holdStartProgress = clamp(apexProgress - 0.018, 0.05, 0.76);
+    const holdEndProgress = clamp(holdStartProgress + 0.17, holdStartProgress + 0.12, 0.9);
     return {
         points: trimmed,
         apexX: apex.x,
         apexY: apex.y,
         apexProgress,
-        launchProgressStart: clamp(apexProgress + 0.055, 0.12, 0.9),
+        holdStartProgress,
+        holdEndProgress,
+        lockProgressStart: clamp(holdStartProgress - 0.08, 0, holdStartProgress),
+        launchProgressStart: clamp(holdEndProgress + 0.012, holdStartProgress + 0.08, 0.92),
         interceptX: intercept.x,
         interceptY: intercept.y
     };
+}
+
+function patriotIncomingPathProgress(patriot, timelineProgress) {
+    const apexProgress = clamp(Number(patriot.apexProgress ?? 0.24), 0.02, 0.94);
+    const holdStart = clamp(Number(patriot.holdStartProgress ?? apexProgress), 0.01, 0.94);
+    const holdEnd = clamp(Number(patriot.holdEndProgress ?? holdStart), holdStart, 0.98);
+    if (timelineProgress <= holdStart) {
+        return clamp((timelineProgress / Math.max(0.001, holdStart)) * apexProgress, 0, apexProgress);
+    }
+
+    if (timelineProgress <= holdEnd) {
+        return apexProgress;
+    }
+
+    const exitProgress = (timelineProgress - holdEnd) / Math.max(0.001, 1 - holdEnd);
+    return clamp(apexProgress + exitProgress * (1 - apexProgress), apexProgress, 1);
 }
 
 function findApexIndex(points) {
@@ -227,8 +271,9 @@ function drawScene(scene, offsetX, offsetY) {
     drawTerrain(scene.terrain ?? [], scene.world);
     drawRadiation(scene.radiation ?? []);
     drawAimPreview(scene.previewTrail ?? []);
-    drawTank(scene.player, "playerTank");
-    drawTank(scene.cpu, "cpuTank");
+    const now = performance.now();
+    drawTank(scene.player, "playerTank", isTankHurt(scene.player, scene, "player"), isTankShieldHit(scene.player, scene, "player"), now);
+    drawTank(scene.cpu, "cpuTank", isTankHurt(scene.cpu, scene, "cpu"), isTankShieldHit(scene.cpu, scene, "cpu"), now);
     if (String(scene.phase ?? "").toLowerCase() !== "battle") {
         drawWind(scene.wind);
     }
@@ -370,7 +415,7 @@ function drawTerrain(terrain, world) {
     }
 
     const worldHeight = world?.height ?? 700;
-    const surfaceTop = terrain.reduce((lowest, y) => Math.min(lowest, y), worldHeight);
+    const surfaceTop = terrainSurfaceTop(terrain, worldHeight);
     ctx.beginPath();
     ctx.moveTo(0, worldHeight);
     for (let x = 0; x < terrain.length; x++) {
@@ -412,6 +457,27 @@ function drawTerrain(terrain, world) {
     ctx.lineWidth = 1.5;
     strokeTerrainTop(terrain, 6, 5);
     drawTerrainGrass(terrain);
+}
+
+function terrainSurfaceTop(terrain, worldHeight) {
+    if (terrain === cachedTerrainTopRef
+        && terrain.length === cachedTerrainTopLength
+        && worldHeight === cachedTerrainTopWorldHeight) {
+        return cachedTerrainTop;
+    }
+
+    let top = worldHeight;
+    for (let i = 0; i < terrain.length; i++) {
+        if (terrain[i] < top) {
+            top = terrain[i];
+        }
+    }
+
+    cachedTerrainTopRef = terrain;
+    cachedTerrainTopLength = terrain.length;
+    cachedTerrainTopWorldHeight = worldHeight;
+    cachedTerrainTop = top;
+    return top;
 }
 
 function drawTerrainStrata(terrain, worldHeight) {
@@ -600,7 +666,7 @@ function drawLavaZone(zone) {
     }
 }
 
-function drawTank(tank, frameName) {
+function drawTank(tank, frameName, hurt = false, shieldHit = false, now = performance.now()) {
     if (!tank) {
         return;
     }
@@ -619,16 +685,113 @@ function drawTank(tank, frameName) {
         drawBurialCover(tank);
     }
 
-    if (tank.shield > 0) {
-        ctx.save();
-        ctx.globalAlpha = 0.5 + Math.sin(performance.now() * 0.008) * 0.16;
-        drawSprite("shield", tank.x - 34, tank.y - 50, 68, 58);
-        ctx.restore();
+    if (tank.shield > 0 || shieldHit) {
+        drawTankShield(tank, shieldHit, now);
+    }
+
+    if (hurt) {
+        drawTankHitPulse(tank, now);
     }
 
     if (tank.health <= 35) {
         drawSmokeStack(tank.x, tank.y - 54);
     }
+}
+
+function drawTankShield(tank, shieldHit, now) {
+    const pulse = 0.5 + Math.sin(now * 0.008) * 0.16;
+    ctx.save();
+    ctx.globalAlpha = shieldHit ? Math.min(0.95, pulse + 0.28) : pulse;
+    drawSprite("shield", tank.x - 34, tank.y - 50, 68, 58);
+    ctx.restore();
+
+    if (!shieldHit) {
+        return;
+    }
+
+    const hitPulse = 0.5 + Math.sin(now * 0.022) * 0.5;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `rgba(132, 222, 255, ${0.58 + hitPulse * 0.28})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(tank.x, tank.y - 28, 44 + hitPulse * 10, 36 + hitPulse * 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.38 + hitPulse * 0.26})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+        const angle = (Math.PI * 0.5 * i) + now * 0.006;
+        ctx.beginPath();
+        ctx.moveTo(tank.x + Math.cos(angle) * 32, tank.y - 28 + Math.sin(angle) * 25);
+        ctx.lineTo(tank.x + Math.cos(angle) * 54, tank.y - 28 + Math.sin(angle) * 42);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawTankHitPulse(tank, now) {
+    const pulse = 0.5 + Math.sin(now * 0.026) * 0.5;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `rgba(255, 52, 42, ${0.42 + pulse * 0.3})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(tank.x, tank.y - 26, 48 + pulse * 9, 30 + pulse * 6, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(255, 46, 38, ${0.08 + pulse * 0.08})`;
+    ctx.beginPath();
+    ctx.ellipse(tank.x, tank.y - 30, 54, 36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function isTankHurt(tank, scene, side) {
+    if (hasVisualFlag(tank?.hurt)
+        || hasVisualFlag(tank?.isHurt)
+        || hasVisualFlag(tank?.hit)
+        || hasVisualFlag(tank?.damagePulse)
+        || hasVisualFlag(tank?.recentDamage)
+        || hasVisualFlag(tank?.healthDamage)
+        || hasVisualFlag(tank?.damageTaken)) {
+        return true;
+    }
+
+    return side === "player"
+        ? hasVisualFlag(scene?.playerHurt) || hasVisualFlag(scene?.hurtPlayer) || hasVisualFlag(scene?.playerHit)
+        : hasVisualFlag(scene?.cpuHurt) || hasVisualFlag(scene?.hurtCpu) || hasVisualFlag(scene?.cpuHit);
+}
+
+function isTankShieldHit(tank, scene, side) {
+    if (hasVisualFlag(tank?.shieldHit)
+        || hasVisualFlag(tank?.shieldHurt)
+        || hasVisualFlag(tank?.shieldDamaged)
+        || hasVisualFlag(tank?.shieldAbsorbed)
+        || hasVisualFlag(tank?.absorbedShieldDamage)
+        || hasVisualFlag(tank?.shieldDamage)
+        || hasVisualFlag(tank?.shieldPulse)) {
+        return true;
+    }
+
+    return side === "player"
+        ? hasVisualFlag(scene?.playerShieldHit) || hasVisualFlag(scene?.shieldHitPlayer) || hasVisualFlag(scene?.playerShieldDamaged)
+        : hasVisualFlag(scene?.cpuShieldHit) || hasVisualFlag(scene?.shieldHitCpu) || hasVisualFlag(scene?.cpuShieldDamaged);
+}
+
+function hasVisualFlag(value) {
+    if (value === true) {
+        return true;
+    }
+
+    if (typeof value === "number") {
+        return value > 0;
+    }
+
+    if (typeof value === "string") {
+        const normalized = value.toLowerCase();
+        return normalized === "true" || normalized === "hit" || normalized === "hurt" || normalized === "damaged" || normalized === "pulse";
+    }
+
+    return Boolean(value);
 }
 
 function drawBurialCover(tank) {
@@ -896,7 +1059,7 @@ function drawPreviewCone(cone) {
     }
 }
 
-function drawTrail(points, count = points.length, weaponId, explosions = []) {
+function drawTrail(points, count = points.length, weaponId, explosions = [], visualKind) {
     if (!points?.length || count <= 0) {
         return;
     }
@@ -904,6 +1067,12 @@ function drawTrail(points, count = points.length, weaponId, explosions = []) {
     ctx.save();
     setWorldTransform();
     const visibleCount = Math.min(points.length, count);
+    if (isLaserWeapon(weaponId, visualKind)) {
+        drawLaserBeam(points, visibleCount);
+        ctx.restore();
+        return;
+    }
+
     if (isDroneWeapon(weaponId)) {
         drawDroneSwarmTrail(points, visibleCount, weaponId);
         ctx.restore();
@@ -953,6 +1122,82 @@ function drawTrail(points, count = points.length, weaponId, explosions = []) {
     ctx.restore();
 }
 
+function drawLaserBeam(points, visibleCount) {
+    const start = points[0];
+    const end = points[Math.max(0, visibleCount - 1)];
+    if (!start || !end) {
+        return;
+    }
+
+    const progress = clamp(visibleCount / Math.max(2, points.length), 0.12, 1);
+    const now = performance.now();
+    const flicker = 0.78 + Math.sin(now * 0.05) * 0.14;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    ctx.strokeStyle = `rgba(255, 49, 71, ${0.18 + progress * 0.18})`;
+    ctx.lineWidth = 18;
+    strokeLaserLine(start.x, start.y, end.x, end.y);
+
+    ctx.strokeStyle = `rgba(255, 117, 94, ${0.34 + progress * 0.26})`;
+    ctx.lineWidth = 9;
+    strokeLaserLine(start.x, start.y, end.x, end.y);
+
+    ctx.strokeStyle = `rgba(255, 250, 230, ${0.72 * flicker})`;
+    ctx.lineWidth = 3;
+    strokeLaserLine(start.x, start.y, end.x, end.y);
+
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    drawLaserMuzzle(start.x, start.y, angle, progress, now);
+    drawLaserImpact(end.x, end.y, progress, now);
+}
+
+function strokeLaserLine(startX, startY, endX, endY) {
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+}
+
+function drawLaserMuzzle(x, y, angle, progress, now) {
+    const pulse = 0.5 + Math.sin(now * 0.06) * 0.5;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 18 + pulse * 8);
+    glow.addColorStop(0, `rgba(255, 255, 255, ${0.72 * progress})`);
+    glow.addColorStop(0.42, `rgba(255, 72, 86, ${0.52 * progress})`);
+    glow.addColorStop(1, "rgba(255, 72, 86, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 26 + pulse * 5, 11 + pulse * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawLaserImpact(x, y, progress, now) {
+    const pulse = 0.5 + Math.sin(now * 0.075) * 0.5;
+    const radius = 10 + pulse * 8 + progress * 8;
+    const glow = ctx.createRadialGradient(x, y, 1, x, y, radius * 2.2);
+    glow.addColorStop(0, `rgba(255, 255, 255, ${0.84 * progress})`);
+    glow.addColorStop(0.32, `rgba(255, 66, 88, ${0.58 * progress})`);
+    glow.addColorStop(1, "rgba(255, 66, 88, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255, 244, 213, ${0.62 * progress})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI * 2 * i / 6) + now * 0.012;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * 4, y + Math.sin(angle) * 4);
+        ctx.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+        ctx.stroke();
+    }
+}
+
 function trajectoryReferencePoint(points, visibleCount) {
     const last = points[Math.max(0, visibleCount - 1)];
     for (let offset = 4; offset <= 12; offset += 2) {
@@ -986,18 +1231,22 @@ function drawMirvTrail(points, visibleCount, explosions) {
 
     const splitProgress = clamp((visibleCount - apexIndex) / Math.max(1, points.length - apexIndex), 0, 1);
     drawMirvSplitFlash(apex, splitProgress);
-    const targets = explosions?.length ? explosions : [{ x: points[points.length - 1].x, y: points[points.length - 1].y }];
-    for (let i = 0; i < targets.length; i++) {
-        const target = targets[i];
-        const lane = i - ((targets.length - 1) / 2);
-        const control = {
-            x: apex.x + lane * 24,
-            y: apex.y - 18 - Math.abs(lane) * 9
-        };
-        const current = quadraticPoint(apex, control, target, splitProgress);
-        const previous = quadraticPoint(apex, control, target, Math.max(0, splitProgress - 0.045));
-        drawMirvFragmentTrail(apex, control, target, splitProgress, i);
-        drawOrientedSprite("shell", current.x, current.y, 16, 7, Math.atan2(current.y - previous.y, current.x - previous.x));
+    const fallbackTarget = points[points.length - 1];
+    const targetCount = explosions?.length ? explosions.length : 1;
+    for (let i = 0; i < targetCount; i++) {
+        const target = explosions?.length ? explosions[i] : fallbackTarget;
+        const targetX = Number(target.x ?? fallbackTarget.x);
+        const targetY = Number(target.y ?? fallbackTarget.y);
+        const lane = i - ((targetCount - 1) / 2);
+        const controlX = apex.x + lane * 24;
+        const controlY = apex.y - 18 - Math.abs(lane) * 9;
+        const previousProgress = Math.max(0, splitProgress - 0.045);
+        const currentX = quadraticScalar(apex.x, controlX, targetX, splitProgress);
+        const currentY = quadraticScalar(apex.y, controlY, targetY, splitProgress);
+        const previousX = quadraticScalar(apex.x, controlX, targetX, previousProgress);
+        const previousY = quadraticScalar(apex.y, controlY, targetY, previousProgress);
+        drawMirvFragmentTrail(apex.x, apex.y, controlX, controlY, targetX, targetY, splitProgress, i);
+        drawOrientedSprite("shell", currentX, currentY, 16, 7, Math.atan2(currentY - previousY, currentX - previousX));
     }
 }
 
@@ -1035,28 +1284,30 @@ function drawMirvPath(points, start, end, color, width) {
     ctx.stroke();
 }
 
-function drawMirvFragmentTrail(start, control, target, progress, fragment) {
+function drawMirvFragmentTrail(startX, startY, controlX, controlY, targetX, targetY, progress, fragment) {
     const steps = Math.max(2, Math.floor(progress * 14));
     ctx.strokeStyle = fragment % 2 === 0 ? "rgba(255, 220, 98, 0.74)" : "rgba(255, 248, 217, 0.62)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i <= steps; i++) {
         const t = progress * (i / steps);
-        const point = quadraticPoint(start, control, target, t);
+        const x = quadraticScalar(startX, controlX, targetX, t);
+        const y = quadraticScalar(startY, controlY, targetY, t);
         if (i === 0) {
-            ctx.moveTo(point.x, point.y);
+            ctx.moveTo(x, y);
         } else {
-            ctx.lineTo(point.x, point.y);
+            ctx.lineTo(x, y);
         }
     }
     ctx.stroke();
 
     for (let i = 0; i <= steps; i += 2) {
         const t = progress * (i / steps);
-        const point = quadraticPoint(start, control, target, t);
+        const x = quadraticScalar(startX, controlX, targetX, t);
+        const y = quadraticScalar(startY, controlY, targetY, t);
         const alpha = 0.52 * (i / Math.max(1, steps));
         ctx.fillStyle = `rgba(255, 126, 38, ${alpha})`;
-        ctx.fillRect(point.x - 1, point.y - 1, 2, 2);
+        ctx.fillRect(x - 1, y - 1, 2, 2);
     }
 }
 
@@ -1089,14 +1340,6 @@ function findTrajectoryApexIndex(points) {
     }
 
     return index;
-}
-
-function quadraticPoint(start, control, end, t) {
-    const inv = 1 - t;
-    return {
-        x: (inv * inv * start.x) + (2 * inv * t * control.x) + (t * t * end.x),
-        y: (inv * inv * start.y) + (2 * inv * t * control.y) + (t * t * end.y)
-    };
 }
 
 function drawSmokeTrail(points, count, weaponId) {
@@ -1203,8 +1446,11 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     const endX = Number(patriot.interceptX ?? options.interceptX);
     const endY = Number(patriot.interceptY ?? options.interceptY);
     const apexProgress = Number(patriot.apexProgress ?? 0.24);
-    const launchStart = Number(patriot.launchProgressStart ?? (apexProgress + 0.06));
-    const lockProgress = clamp((pathProgress - (apexProgress - 0.045)) / 0.09, 0, 1);
+    const holdStart = Number(patriot.holdStartProgress ?? Math.max(0, apexProgress - 0.02));
+    const holdEnd = Number(patriot.holdEndProgress ?? (apexProgress + 0.14));
+    const lockStart = Number(patriot.lockProgressStart ?? Math.max(0, holdStart - 0.08));
+    const launchStart = Number(patriot.launchProgressStart ?? (holdEnd + 0.012));
+    const lockProgress = clamp((pathProgress - lockStart) / Math.max(0.05, holdStart - lockStart), 0, 1);
     const launchProgress = clamp((pathProgress - launchStart) / Math.max(0.08, 1 - launchStart), 0, 1);
     const missileProgress = 1 - Math.pow(1 - launchProgress, 2.55);
     const controlX = startX + ((endX - startX) * 0.22);
@@ -1221,8 +1467,12 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     setWorldTransform();
 
     if (lockProgress > 0) {
-        const postLaunchFade = launchProgress > 0 ? 0.48 : 1;
-        drawPatriotReticle(apexX, apexY, lockProgress * postLaunchFade, now);
+        const postLaunchFade = launchProgress > 0 ? Math.max(0.35, 1 - launchProgress * 0.75) : 1;
+        drawPatriotReticle(apexX, apexY, lockProgress * postLaunchFade, now, patriotReticleScale);
+    }
+
+    if (pathProgress >= holdStart && pathProgress <= holdEnd) {
+        drawPatriotHoldField(apexX, apexY, clamp((pathProgress - holdStart) / Math.max(0.001, holdEnd - holdStart), 0, 1), now);
     }
 
     if (launchProgress > 0) {
@@ -1250,37 +1500,57 @@ function quadraticScalar(a, b, c, t) {
     return (inv * inv * a) + (2 * inv * t * b) + (t * t * c);
 }
 
-function drawPatriotReticle(x, y, alpha, now) {
+function drawPatriotReticle(x, y, alpha, now, scale = 1) {
     const pulse = 0.72 + Math.sin(now * 0.018) * 0.28;
     const spin = now * 0.0045;
-    const radius = 18 + pulse * 12;
+    const radius = (20 + pulse * 15) * scale;
+    const armInner = 12 * scale;
+    const armOuter = 42 * scale;
 
     ctx.save();
     ctx.globalAlpha = clamp01(alpha);
     ctx.strokeStyle = `rgba(255, 248, 217, ${0.42 + pulse * 0.34})`;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2 + scale;
     ctx.beginPath();
     ctx.arc(x, y, radius, spin, spin + Math.PI * 0.72);
     ctx.arc(x, y, radius, spin + Math.PI, spin + Math.PI * 1.72);
     ctx.stroke();
 
     ctx.strokeStyle = `rgba(121, 214, 255, ${0.52 + pulse * 0.28})`;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5 + scale * 0.5;
     ctx.beginPath();
     ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.strokeStyle = `rgba(255, 248, 217, ${0.7 * alpha})`;
     ctx.beginPath();
-    ctx.moveTo(x - 38, y);
-    ctx.lineTo(x - 12, y);
-    ctx.moveTo(x + 12, y);
-    ctx.lineTo(x + 38, y);
-    ctx.moveTo(x, y - 38);
-    ctx.lineTo(x, y - 12);
-    ctx.moveTo(x, y + 12);
-    ctx.lineTo(x, y + 38);
+    ctx.moveTo(x - armOuter, y);
+    ctx.lineTo(x - armInner, y);
+    ctx.moveTo(x + armInner, y);
+    ctx.lineTo(x + armOuter, y);
+    ctx.moveTo(x, y - armOuter);
+    ctx.lineTo(x, y - armInner);
+    ctx.moveTo(x, y + armInner);
+    ctx.lineTo(x, y + armOuter);
     ctx.stroke();
+    ctx.restore();
+}
+
+function drawPatriotHoldField(x, y, progress, now) {
+    const fade = Math.sin(progress * Math.PI);
+    const pulse = 0.5 + Math.sin(now * 0.032) * 0.5;
+    ctx.save();
+    ctx.strokeStyle = `rgba(121, 214, 255, ${0.18 + fade * 0.34})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 8]);
+    ctx.beginPath();
+    ctx.arc(x, y, 52 + pulse * 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgba(121, 214, 255, ${0.08 + fade * 0.08})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 18 + pulse * 6, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 }
 
@@ -1510,6 +1780,8 @@ function drawTriggeredExplosions(explosions, visibleTrailCount, now, starts) {
         return;
     }
 
+    ctx.save();
+    setWorldTransform();
     for (const explosion of explosions) {
         const triggerIndex = Number(explosion.triggerIndex ?? -1);
         if (triggerIndex < 0 || visibleTrailCount <= triggerIndex) {
@@ -1522,19 +1794,21 @@ function drawTriggeredExplosions(explosions, visibleTrailCount, now, starts) {
         }
 
         const progress = clamp01((now - starts.get(key)) / 330);
-        drawExplosions([explosion], progress);
+        drawExplosion(explosion, progress);
     }
+    ctx.restore();
 }
 
 function animateExplosions(scene, explosions, screenShake) {
     const started = performance.now();
-    const duration = explosions.some(explosion => explosion.nuclear) ? 560 : 420;
+    const intense = hasIntenseExplosion(explosions);
+    const duration = hasNuclearExplosion(explosions) ? 560 : 420;
 
     return new Promise(resolve => {
         const tick = now => {
             const t = Math.min(1, (now - started) / duration);
             const strength = Math.sin(t * Math.PI);
-            const shake = screenShake ? strength * (explosions.some(e => e.nuclear || e.radius > 80) ? 7 : 3) : 0;
+            const shake = screenShake ? strength * (intense ? 7 : 3) : 0;
             drawScene(scene, Math.sin(now * 0.09) * shake, Math.cos(now * 0.07) * shake * 0.45);
             drawExplosions(explosions, t);
             if (t < 1) {
@@ -1549,67 +1823,107 @@ function animateExplosions(scene, explosions, screenShake) {
     });
 }
 
+function hasNuclearExplosion(explosions) {
+    for (let i = 0; i < explosions.length; i++) {
+        if (explosions[i].nuclear) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasIntenseExplosion(explosions) {
+    for (let i = 0; i < explosions.length; i++) {
+        const explosion = explosions[i];
+        if (explosion.nuclear || explosion.radius > 80) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function drawExplosions(explosions, progress = 1) {
+    if (!explosions.length) {
+        return;
+    }
+
     ctx.save();
     setWorldTransform();
     for (const explosion of explosions) {
-        const radius = explosion.radius ?? 32;
-        const lava = isLavaExplosion(explosion);
-        const patriot = isPatriotExplosion(explosion);
-        const penetrator = isPenetratorExplosion(explosion);
-        const bloom = radius * (0.45 + progress * 0.9);
-        const fade = Math.max(0, 1 - progress);
-        const flash = Math.max(0, 1 - progress * 2.2);
-        const spriteName = patriot ? "shield" : explosion.nuclear ? "nuclear" : radius > 58 || penetrator ? "explosionLarge" : "explosionSmall";
-        const spriteSize = radius * (1.4 + progress * (explosion.nuclear ? 1.4 : 0.95));
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, 0.25 + progress * 1.2) * Math.max(0.18, 1 - progress * 0.16);
-        drawSprite(spriteName, explosion.x - spriteSize / 2, explosion.y - spriteSize / 2, spriteSize, spriteSize);
-        ctx.restore();
-
-        const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, bloom);
-        gradient.addColorStop(0, "#fffdf0");
-        gradient.addColorStop(0.22, patriot ? "#9fd6ff" : explosion.nuclear ? "#fff0a2" : lava ? "#fff06a" : penetrator ? "#ffd276" : "#ffdc68");
-        gradient.addColorStop(0.58, patriot ? "rgba(71, 165, 255, 0.58)" : explosion.nuclear ? "rgba(255, 136, 49, 0.64)" : lava ? "rgba(255, 80, 24, 0.78)" : penetrator ? "rgba(191, 92, 48, 0.72)" : "rgba(236, 106, 92, 0.72)");
-        gradient.addColorStop(1, "rgba(28, 22, 18, 0)");
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(explosion.x, explosion.y, bloom, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = `rgba(255, 246, 191, ${0.78 * fade})`;
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.arc(explosion.x, explosion.y, radius * (0.65 + progress * 1.1), 0, Math.PI * 2);
-        ctx.stroke();
-
-        drawBlastSparks(explosion, radius, progress, lava);
-        drawSmokePuffs(explosion, radius, progress);
-
-        if (flash > 0) {
-            ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.72})`;
-            ctx.beginPath();
-            ctx.arc(explosion.x, explosion.y, radius * (0.18 + progress * 0.35), 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        if (patriot) {
-            drawPatriotIntercept(explosion, radius, progress);
-        } else if (penetrator) {
-            drawPenetratorShock(explosion, radius, progress);
-        } else if (explosion.nuclear) {
-            drawNukeColumn(explosion, radius, progress);
-            ctx.strokeStyle = `rgba(255, 222, 82, ${0.75 * fade})`;
-            ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.arc(explosion.x, explosion.y, radius * (1.1 + progress * 1.15), 0, Math.PI * 2);
-            ctx.stroke();
-            drawNuclearGroundFlash(explosion, radius, progress);
-        } else if (lava) {
-            drawLavaSplash(explosion, radius, progress);
-        }
+        drawExplosion(explosion, progress);
     }
     ctx.restore();
+}
+
+function drawExplosion(explosion, progress = 1) {
+    const radius = explosion.radius ?? 32;
+    const lava = isLavaExplosion(explosion);
+    const patriot = isPatriotExplosion(explosion);
+    const shieldHit = isShieldHitExplosion(explosion);
+    const laser = isLaserExplosion(explosion);
+    const penetrator = isPenetratorExplosion(explosion);
+    const shieldLike = patriot || shieldHit;
+    const bloom = radius * (0.45 + progress * 0.9);
+    const fade = Math.max(0, 1 - progress);
+    const flash = Math.max(0, 1 - progress * 2.2);
+    const spriteName = shieldLike ? "shield" : explosion.nuclear ? "nuclear" : radius > 58 || penetrator ? "explosionLarge" : "explosionSmall";
+    const spriteSize = radius * (1.4 + progress * (explosion.nuclear ? 1.4 : 0.95));
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, 0.25 + progress * 1.2) * Math.max(0.18, 1 - progress * 0.16);
+    drawSprite(spriteName, explosion.x - spriteSize / 2, explosion.y - spriteSize / 2, spriteSize, spriteSize);
+    ctx.restore();
+
+    const gradient = ctx.createRadialGradient(explosion.x, explosion.y, 2, explosion.x, explosion.y, bloom);
+    gradient.addColorStop(0, "#fffdf0");
+    gradient.addColorStop(0.22, shieldLike ? "#9fd6ff" : explosion.nuclear ? "#fff0a2" : laser ? "#fff5f4" : lava ? "#fff06a" : penetrator ? "#ffd276" : "#ffdc68");
+    gradient.addColorStop(0.58, shieldLike ? "rgba(71, 165, 255, 0.58)" : explosion.nuclear ? "rgba(255, 136, 49, 0.64)" : laser ? "rgba(255, 58, 86, 0.62)" : lava ? "rgba(255, 80, 24, 0.78)" : penetrator ? "rgba(191, 92, 48, 0.72)" : "rgba(236, 106, 92, 0.72)");
+    gradient.addColorStop(1, "rgba(28, 22, 18, 0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(explosion.x, explosion.y, bloom, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = shieldLike
+        ? `rgba(121, 214, 255, ${0.78 * fade})`
+        : laser
+            ? `rgba(255, 82, 98, ${0.78 * fade})`
+            : `rgba(255, 246, 191, ${0.78 * fade})`;
+    ctx.lineWidth = shieldLike ? 4 : 5;
+    ctx.beginPath();
+    ctx.arc(explosion.x, explosion.y, radius * (0.65 + progress * 1.1), 0, Math.PI * 2);
+    ctx.stroke();
+
+    drawBlastSparks(explosion, radius, progress, lava || laser);
+    drawSmokePuffs(explosion, radius, progress);
+
+    if (flash > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.72})`;
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius * (0.18 + progress * 0.35), 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    if (patriot) {
+        drawPatriotIntercept(explosion, radius, progress);
+    } else if (shieldHit) {
+        drawShieldAbsorption(explosion, radius, progress);
+    } else if (penetrator) {
+        drawPenetratorShock(explosion, radius, progress);
+    } else if (explosion.nuclear) {
+        drawNukeColumn(explosion, radius, progress);
+        ctx.strokeStyle = `rgba(255, 222, 82, ${0.75 * fade})`;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius * (1.1 + progress * 1.15), 0, Math.PI * 2);
+        ctx.stroke();
+        drawNuclearGroundFlash(explosion, radius, progress);
+    } else if (lava) {
+        drawLavaSplash(explosion, radius, progress);
+    } else if (laser) {
+        drawLaserImpactBurst(explosion, radius, progress);
+    }
 }
 
 function drawBlastSparks(explosion, radius, progress, lava = false) {
@@ -1639,6 +1953,44 @@ function drawSmokePuffs(explosion, radius, progress) {
         ctx.beginPath();
         ctx.arc(x, y, puffRadius, 0, Math.PI * 2);
         ctx.fill();
+    }
+}
+
+function drawShieldAbsorption(explosion, radius, progress) {
+    const fade = Math.max(0, 1 - progress);
+    ctx.strokeStyle = `rgba(121, 214, 255, ${0.76 * fade})`;
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius * (0.55 + progress * (0.78 + i * 0.28)), 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.58 * fade})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 * i / 8) - progress * 0.7;
+        const inner = radius * (0.18 + progress * 0.16);
+        const outer = radius * (0.62 + progress * 0.4);
+        ctx.beginPath();
+        ctx.moveTo(explosion.x + Math.cos(angle) * inner, explosion.y + Math.sin(angle) * inner);
+        ctx.lineTo(explosion.x + Math.cos(angle) * outer, explosion.y + Math.sin(angle) * outer);
+        ctx.stroke();
+    }
+}
+
+function drawLaserImpactBurst(explosion, radius, progress) {
+    const fade = Math.max(0, 1 - progress);
+    ctx.strokeStyle = `rgba(255, 246, 222, ${0.64 * fade})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 9; i++) {
+        const angle = (Math.PI * 2 * i / 9) + progress * 0.8;
+        const inner = radius * (0.12 + progress * 0.18);
+        const outer = radius * (0.48 + progress * 0.52);
+        ctx.beginPath();
+        ctx.moveTo(explosion.x + Math.cos(angle) * inner, explosion.y + Math.sin(angle) * inner);
+        ctx.lineTo(explosion.x + Math.cos(angle) * outer, explosion.y + Math.sin(angle) * outer);
+        ctx.stroke();
     }
 }
 
@@ -1818,6 +2170,12 @@ function isMissileWeapon(weaponId) {
         || id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
 }
 
+function isLaserWeapon(weaponId, visualKind) {
+    const id = String(weaponId ?? "").toLowerCase();
+    const kind = String(visualKind ?? "").toLowerCase();
+    return id.includes("laser") || kind.includes("laser");
+}
+
 function isDroneWeapon(weaponId) {
     const id = String(weaponId ?? "").toLowerCase();
     return id.includes("shahed") || id.includes("drone");
@@ -1883,6 +2241,25 @@ function isLavaExplosion(explosion) {
 function isPatriotExplosion(explosion) {
     const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
     return Boolean(explosion.patriotIntercept || kind.includes("patriot"));
+}
+
+function isShieldHitExplosion(explosion) {
+    if (isPatriotExplosion(explosion)) {
+        return false;
+    }
+
+    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
+    return Boolean(explosion.shieldHit
+        || explosion.shieldAbsorbed
+        || explosion.absorbedByShield
+        || Number(explosion.shieldDamage ?? explosion.shieldAbsorption ?? 0) > 0
+        || kind.includes("shield"));
+}
+
+function isLaserExplosion(explosion) {
+    const kind = String(explosion.visualKind ?? explosion.kind ?? "").toLowerCase();
+    const id = String(explosion.weaponId ?? explosion.weapon ?? "").toLowerCase();
+    return kind.includes("laser") || id.includes("laser");
 }
 
 function isPenetratorExplosion(explosion) {

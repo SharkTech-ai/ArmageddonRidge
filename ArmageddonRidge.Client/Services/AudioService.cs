@@ -5,25 +5,17 @@ namespace ArmageddonRidge.Client.Services;
 /// <summary>
 /// Blazor wrapper around the generated WebAudio sound-effect engine.
 /// </summary>
-public sealed class AudioService : IAsyncDisposable
+/// <param name="js">Browser JavaScript runtime used to import and call the audio module.</param>
+public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
 {
-    private readonly IJSRuntime _js;
     private IJSObjectReference? _module;
-
-    /// <summary>
-    /// Creates an audio service using the browser JavaScript runtime.
-    /// </summary>
-    public AudioService(IJSRuntime js)
-    {
-        _js = js;
-    }
 
     /// <summary>
     /// Imports and initializes the browser audio module.
     /// </summary>
     public async ValueTask InitializeAsync()
     {
-        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", "./js/audioEngine.js");
+        _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/audioEngine.js");
         await _module.InvokeVoidAsync("initialize");
     }
 

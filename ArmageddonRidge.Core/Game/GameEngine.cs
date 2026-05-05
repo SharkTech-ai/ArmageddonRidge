@@ -11,7 +11,9 @@ namespace ArmageddonRidge.Core.Game;
 /// <summary>
 /// Coordinates deterministic match setup, shot resolution, turns, economy, and round progression.
 /// </summary>
-public sealed class GameEngine
+/// <param name="weapons">Weapon catalog used by player, shop, and CPU decisions.</param>
+/// <param name="upgrades">Upgrade catalog used by shop and economy decisions.</param>
+public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
 {
     private readonly TerrainGenerator _terrainGenerator = new();
     private readonly TerrainDeformer _terrainDeformer = new();
@@ -19,35 +21,24 @@ public sealed class GameEngine
     private readonly ExplosionService _explosionService = new();
 
     /// <summary>
-    /// Creates a game engine from the active content catalogs.
-    /// </summary>
-    public GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
-    {
-        Weapons = weapons;
-        Upgrades = upgrades;
-        Economy = new EconomyService(weapons, upgrades);
-        Cpu = new CpuOpponent(weapons, _projectileSimulator);
-    }
-
-    /// <summary>
     /// Gets the weapon catalog used by this engine.
     /// </summary>
-    public WeaponCatalog Weapons { get; }
+    public WeaponCatalog Weapons { get; } = weapons;
 
     /// <summary>
     /// Gets the upgrade catalog used by this engine.
     /// </summary>
-    public UpgradeCatalog Upgrades { get; }
+    public UpgradeCatalog Upgrades { get; } = upgrades;
 
     /// <summary>
     /// Gets the economy service for shop purchases and rewards.
     /// </summary>
-    public EconomyService Economy { get; }
+    public EconomyService Economy { get; } = new(weapons, upgrades);
 
     /// <summary>
     /// Gets the CPU planner used for CPU-controlled turns.
     /// </summary>
-    public CpuOpponent Cpu { get; }
+    public CpuOpponent Cpu { get; } = new(weapons, new ProjectileSimulator());
 
     /// <summary>
     /// Creates a new deterministic match from player-selected settings.
@@ -208,11 +199,23 @@ public sealed class GameEngine
         state.ShotsFired++;
         if (state.CurrentTurn == TurnOwner.Player)
         {
-            state.DamageDealtByPlayer += resolvedExplosions.Sum(static explosion => explosion.CpuDamage);
+            var damage = 0f;
+            for (var i = 0; i < resolvedExplosions.Count; i++)
+            {
+                damage += resolvedExplosions[i].CpuDamage;
+            }
+
+            state.DamageDealtByPlayer += damage;
         }
         else
         {
-            state.DamageDealtByCpu += resolvedExplosions.Sum(static explosion => explosion.PlayerDamage);
+            var damage = 0f;
+            for (var i = 0; i < resolvedExplosions.Count; i++)
+            {
+                damage += resolvedExplosions[i].PlayerDamage;
+            }
+
+            state.DamageDealtByCpu += damage;
         }
 
         var winner = Winner(state);
@@ -279,31 +282,7 @@ public sealed class GameEngine
         }
 
         if (weapon.BehaviorType == WeaponBehaviorType.Laser)
-        {
-            var radians = angle * MathF.PI / 180f;
-            var stepX = MathF.Cos(radians) * 7f;
-            var stepY = -MathF.Sin(radians) * 7f;
-            var trail = new List<Vector2>();
-            var origin = owner.Center;
-            var opponentCenter = opponent.Center;
-            var hitRadiusSquared = GameConstants.TankWidth * GameConstants.TankWidth;
-            for (var i = 0; i < 180; i++)
-            {
-                var p = origin + new Vector2(stepX * i, stepY * i);
-                trail.Add(p);
-                if (state.Terrain.IsSolid(p))
-                {
-                    return new WeaponSimulation(trail, p, [new ExplosionResult(p, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [])]);
-                }
-
-                if (Vector2.DistanceSquared(p, opponentCenter) < hitRadiusSquared)
-                {
-                    return new WeaponSimulation(trail, p, [new ExplosionResult(p, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [])]);
-                }
-            }
-
-            return new WeaponSimulation(trail, trail[^1], []);
-        }
+            return SimulateLaser(state.Terrain, owner, opponent, weapon);
 
         if (weapon.Id == WeaponIds.DarkEagle)
         {
@@ -389,6 +368,69 @@ public sealed class GameEngine
             trail,
             target,
             [new ExplosionResult(target, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Missile)]);
+    }
+
+    private static WeaponSimulation SimulateLaser(TerrainMask terrain, Tank owner, Tank opponent, WeaponDefinition weapon)
+    {
+        const float BeamStep = 4f;
+        const float BeamPadding = 2f;
+
+        var origin = LaserOrigin(owner, opponent);
+        var target = opponent.Center;
+        var delta = target - origin;
+        var distance = delta.Length();
+        if (distance <= 0.001f) return new WeaponSimulation([target], target, [LaserExplosion(target, weapon)]);
+
+        var steps = Math.Max(1, (int)MathF.Ceiling(distance / BeamStep));
+        var trail = new List<Vector2>(steps + 1) { origin };
+        if (terrain.IsSolid(origin)) return new WeaponSimulation(trail, origin, [LaserExplosion(origin, weapon)]);
+
+        var previous = origin;
+        for (var i = 1; i <= steps; i++)
+        {
+            var t = i / (float)steps;
+            var point = origin + (delta * t);
+            trail.Add(point);
+            if (terrain.IsSolid(point))
+            {
+                var hit = RefineTerrainHit(terrain, previous, point);
+                trail[^1] = hit;
+                return new WeaponSimulation(trail, hit, [LaserExplosion(hit, weapon)]);
+            }
+
+            previous = point;
+        }
+
+        if (ProjectileSimulator.SweptHitsTank(origin, target, opponent, BeamPadding, out _))
+        {
+            trail[^1] = target;
+            return new WeaponSimulation(trail, target, [LaserExplosion(target, weapon)]);
+        }
+
+        return new WeaponSimulation(trail, trail[^1], []);
+    }
+
+    private static ExplosionResult LaserExplosion(Vector2 center, WeaponDefinition weapon) =>
+        new(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Laser);
+
+    private static Vector2 LaserOrigin(Tank owner, Tank opponent)
+    {
+        var delta = opponent.Center - owner.Center;
+        if (delta.LengthSquared() <= 0.001f) return owner.Center;
+
+        return ClampToWorld(owner.Center + (Vector2.Normalize(delta) * 32f));
+    }
+
+    private static Vector2 RefineTerrainHit(TerrainMask terrain, Vector2 clear, Vector2 solid)
+    {
+        for (var i = 0; i < 6; i++)
+        {
+            var midpoint = (clear + solid) * 0.5f;
+            if (terrain.IsSolid(midpoint)) solid = midpoint;
+            else clear = midpoint;
+        }
+
+        return solid;
     }
 
     private static WeaponSimulation SimulateMultiStagePenetrator(ProjectileSimulation primary, Tank owner, WeaponDefinition weapon)
@@ -546,10 +588,15 @@ public sealed class GameEngine
 
     private static bool IsCoveredByDirt(Tank tank, TerrainMask terrain, IReadOnlyList<ExplosionResult> explosions)
     {
-        if (!explosions.Any(static explosion => explosion.DirtAdded))
+        var dirtAdded = false;
+        for (var i = 0; i < explosions.Count; i++)
         {
-            return false;
+            if (!explosions[i].DirtAdded) continue;
+            dirtAdded = true;
+            break;
         }
+
+        if (!dirtAdded) return false;
 
         var surfaceY = terrain.GetSurfaceY(tank.Position.X);
         return surfaceY < tank.Position.Y - 4f;
@@ -627,8 +674,9 @@ public sealed class GameEngine
 
     private static void SetTankHealth(Tank tank, int health)
     {
-        tank.MaxHealth = health;
-        tank.Health = health;
+        var clampedHealth = Math.Max(0, health);
+        tank.MaxHealth = clampedHealth;
+        tank.Health = clampedHealth;
     }
 
     private void SeedCpuInventory(Tank cpu, MatchSettings settings, int round)

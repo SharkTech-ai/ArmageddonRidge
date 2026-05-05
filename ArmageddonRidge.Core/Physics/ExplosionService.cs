@@ -21,7 +21,7 @@ public sealed class ExplosionService
     {
         var ownerDamage = weapon.CanDamageSelf ? ApplyDamage(owner, center, weapon) : 0;
         var opponentDamage = ApplyDamage(opponent, center, weapon);
-        var newZones = new List<RadiationZone>();
+        IReadOnlyList<RadiationZone> newZones = [];
         var resolvedVisualKind = visualKind ?? VisualKindFor(weapon);
 
         if (weapon.RadiationTurns > 0 && weapon.RadiationDamagePerTurn > 0)
@@ -29,7 +29,7 @@ public sealed class ExplosionService
             var zoneKind = resolvedVisualKind == ShotVisualKind.Fire ? ShotVisualKind.Lava : resolvedVisualKind;
             var zone = new RadiationZone(center, weapon.BlastRadius * 0.7f, weapon.RadiationTurns, weapon.RadiationDamagePerTurn, zoneKind);
             zones.Add(zone);
-            newZones.Add(zone);
+            newZones = [zone];
         }
 
         return new ExplosionResult(
@@ -50,8 +50,9 @@ public sealed class ExplosionService
     public float ApplyRadiation(Tank tank, List<RadiationZone> zones)
     {
         var total = 0f;
-        foreach (var zone in zones)
+        for (var i = 0; i < zones.Count; i++)
         {
+            var zone = zones[i];
             if (Vector2.DistanceSquared(tank.Center, zone.Center) <= zone.Radius * zone.Radius)
             {
                 total += zone.DamagePerTurn;
@@ -71,38 +72,23 @@ public sealed class ExplosionService
         {
             var zone = zones[i];
             zone = zone with { TurnsRemaining = zone.TurnsRemaining - 1 };
-            if (zone.TurnsRemaining <= 0)
-            {
-                zones.RemoveAt(i);
-            }
-            else
-            {
-                zones[i] = zone;
-            }
+            if (zone.TurnsRemaining <= 0) zones.RemoveAt(i);
+            else zones[i] = zone;
         }
     }
 
     private static float ApplyDamage(Tank tank, Vector2 center, WeaponDefinition weapon)
     {
-        if (weapon.MaxDamage <= 0 || weapon.BlastRadius <= 0)
-        {
-            return 0;
-        }
+        if (weapon.MaxDamage <= 0 || weapon.BlastRadius <= 0) return 0;
 
         var radiusSquared = weapon.BlastRadius * weapon.BlastRadius;
         var distanceSquared = Vector2.DistanceSquared(tank.Center, center);
-        if (distanceSquared >= radiusSquared)
-        {
-            return 0;
-        }
+        if (distanceSquared >= radiusSquared) return 0;
 
         var distance = MathF.Sqrt(distanceSquared);
         var normalized = Math.Clamp(1f - (distance / weapon.BlastRadius), 0f, 1f);
         var damage = weapon.MaxDamage * MathF.Pow(normalized, weapon.Falloff);
-        if (damage <= 0.01f)
-        {
-            return 0;
-        }
+        if (damage <= 0.01f) return 0;
 
         var bypass = damage * weapon.ShieldBypassPercent;
         var blockable = damage - bypass;
