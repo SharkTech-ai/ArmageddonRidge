@@ -1,5 +1,5 @@
 import { clamp, clamp01, hash2d, positiveModulo, quadraticScalar } from "./rendering/math.js";
-import { configureSprites, drawOrientedSprite, drawSprite, drawSpriteFacing, loadSprites } from "./rendering/sprites.js";
+import { configureSprites, drawOrientedSprite, drawSprite, drawSpriteFacing, loadSprites, spriteFrame } from "./rendering/sprites.js";
 import {
     isDarkEagleWeapon,
     isDroneWeapon,
@@ -891,7 +891,7 @@ function drawBurialCover(tank) {
 
 function drawTankSprite(tank, baseFrameName) {
     const frameName = tank.isCpu || baseFrameName === "cpuTank" ? "cpuHull" : "playerHull";
-    const frame = manifest?.frames?.[frameName];
+    const frame = spriteFrame(frameName);
 
     if (!frame) {
         drawSprite(baseFrameName, tank.x - 48, tank.y - 52, 96, 48);

@@ -20,23 +20,6 @@
                     <p>Wind. Terrain. Ridiculous ordnance. One more shot.</p>
                     <p class="best-score">Best score: @_bestScore</p>
                 </div>
-                @if (DemoModeVisible)
-                {
-                    <div class="demo-affordance menu-demo" aria-label="Autoplay demo mode">
-                        <div class="demo-stage" aria-hidden="true">
-                            <span class="demo-ridge"></span>
-                            <span class="demo-tank demo-left"></span>
-                            <span class="demo-tank demo-right"></span>
-                            @foreach (var shot in DemoShots)
-                            {
-                                <span class="demo-shot @shot.CssClass" title="@shot.Name"></span>
-                            }
-                            <span class="demo-explosion demo-explosion-left"></span>
-                            <span class="demo-explosion demo-explosion-right"></span>
-                        </div>
-                        <span class="demo-badge">Demo mode</span>
-                    </div>
-                }
             </div>
             <div class="menu-actions">
                 <div class="menu-actions-head">
@@ -63,23 +46,6 @@
         <div class="battle-layout @BattleLayoutCss">
             <section class="@BattlefieldPanelCss" @onpointermove="HandleBattlePanelPointerMove" @onpointerup="EndBattlePanelDrag" @onpointerleave="EndBattlePanelDrag">
                 <canvas @ref="_canvas" class="battlefield" width="1200" height="700" aria-label="Armageddon Ridge battlefield"></canvas>
-                @if (DemoModeVisible)
-                {
-                    <div class="demo-affordance battlefield-demo" aria-label="Autoplay demo mode">
-                        <div class="demo-stage" aria-hidden="true">
-                            <span class="demo-ridge"></span>
-                            <span class="demo-tank demo-left"></span>
-                            <span class="demo-tank demo-right"></span>
-                            @foreach (var shot in DemoShots)
-                            {
-                                <span class="demo-shot @shot.CssClass" title="@shot.Name"></span>
-                            }
-                            <span class="demo-explosion demo-explosion-left"></span>
-                            <span class="demo-explosion demo-explosion-right"></span>
-                        </div>
-                        <span class="demo-badge">Demo mode</span>
-                    </div>
-                }
                 <div class="@BattleHudCss" aria-label="Battle health">
                     <div class="@PlayerVersusHealthCss">
                         <div class="fighter-label">

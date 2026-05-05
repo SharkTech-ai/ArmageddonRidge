@@ -14,12 +14,6 @@ namespace ArmageddonRidge.Client.Pages;
 public partial class Home
 {
     private static readonly Difficulty[] DifficultyOptions = Enum.GetValues<Difficulty>();
-    private static readonly DemoShot[] DemoShots =
-    [
-        new("Heavy shell", "demo-shot-a"),
-        new("Drone swarm", "demo-shot-b"),
-        new("Bunker buster", "demo-shot-c")
-    ];
 
     private ElementReference _canvas;
     private GameState? _state;
@@ -49,7 +43,6 @@ public partial class Home
     private bool _playerShieldHit;
     private bool _cpuShieldHit;
     private int _damagePulse;
-    private bool _demoModeActive = true;
     private bool _battlePanelDragging;
     private double _battlePanelDragStartX;
     private double _battlePanelDragStartY;
@@ -73,8 +66,6 @@ public partial class Home
     private bool AnyTankShieldHit => _playerShieldHit || _cpuShieldHit;
 
     private bool AnyTankFeedback => AnyTankHurt || AnyTankShieldHit;
-
-    private bool DemoModeVisible => _demoModeActive && (_state is null || _state.Phase == GamePhase.Shop);
 
     private bool CanFirePlayer => _canFire && _state?.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Player;
 
@@ -163,7 +154,6 @@ public partial class Home
     {
         _settings = new MatchSettings(Difficulty: _difficulty, StartingCash: _startingCash, TerrainSeed: Random.Shared.Next(10_000, 99_999));
         _state = Engine.NewMatch(_settings);
-        _demoModeActive = true;
         ClearDamageFeedback();
         RefreshPlayerWeapons();
         ResetRenderCache();
@@ -176,7 +166,6 @@ public partial class Home
         if (_state is null) return;
 
         Engine.StartBattle(_state);
-        _demoModeActive = false;
         _battlePanelCollapsed = true;
         ResetBattlePanelDrag();
         await Audio.PlayAsync("menu");
@@ -772,6 +761,4 @@ public partial class Home
 
         return false;
     }
-
-    private sealed record DemoShot(string Name, string CssClass);
 }

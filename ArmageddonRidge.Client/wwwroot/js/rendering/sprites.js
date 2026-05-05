@@ -7,10 +7,14 @@ export function configureSprites(contextProvider) {
     getContext = contextProvider;
 }
 
+export function spriteFrame(name) {
+    return manifest?.frames?.[name];
+}
+
 export function drawSprite(name, x, y, width, height) {
     const ctx = getContext();
     const sprite = extraSprites[name] ?? atlas;
-    const frame = manifest?.frames?.[name];
+    const frame = spriteFrame(name);
     if (!ctx || !sprite || !frame) {
         fallbackSprite(name, x, y, width, height);
         return;
