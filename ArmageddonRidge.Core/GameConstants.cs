@@ -10,6 +10,8 @@ public static class GameConstants
     public const int TankHeight = 18;
     public const float FixedDeltaTime = 1f / 60f;
     public const float Gravity = 120f;
+    public const int WindMin = -24;
+    public const int WindMax = 24;
     public const int PowerMin = 1;
     public const int PowerMax = 100;
     public const int StartingHealth = 100;

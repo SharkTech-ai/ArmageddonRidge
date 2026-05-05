@@ -117,7 +117,7 @@
                         </label>
                         <label>
                             Angle <strong>@_state.PlayerTank.TurretAngle.ToString("0")</strong>
-                            <input type="range" min="5" max="85" step="1" @bind="_state.PlayerTank.TurretAngle" @bind:event="oninput" @onchange="RenderSceneAsync" />
+                            <input type="range" min="5" max="85" step="1" value="@_state.PlayerTank.TurretAngle" @oninput="HandleAngleInputAsync" />
                         </label>
                         <label>
                             Power <strong>@_power</strong>
@@ -414,6 +414,17 @@
                 TogglePerf();
                 break;
         }
+    }
+
+    private async Task HandleAngleInputAsync(ChangeEventArgs args)
+    {
+        if (_state is null || !float.TryParse(args.Value?.ToString(), out var angle))
+        {
+            return;
+        }
+
+        _state.PlayerTank.TurretAngle = Math.Clamp(angle, 5, 85);
+        await RenderSceneAsync();
     }
 
     private void CycleWeapon()

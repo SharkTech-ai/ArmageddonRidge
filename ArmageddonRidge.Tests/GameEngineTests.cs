@@ -49,6 +49,19 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void WindStaysInsidePlayableRange()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+
+        for (var seed = 0; seed < 200; seed++)
+        {
+            var state = engine.NewMatch(settings with { TerrainSeed = seed });
+            Assert.InRange(state.Wind, GameConstants.WindMin, GameConstants.WindMax);
+        }
+    }
+
+    [Fact]
     public void TeleportShotIsConsumedAndCannotBeReusedFromOneInventoryCount()
     {
         var engine = CreateEngine();

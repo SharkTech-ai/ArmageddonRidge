@@ -9,7 +9,7 @@ let renderMs = 0;
 let lastScene;
 let rafId = 0;
 let shotInProgress = false;
-const spriteManifestVersion = "2026-05-04-genesis-v3";
+const spriteManifestVersion = "2026-05-04-genesis-v4";
 const cloudBands = [
     { x: 90, y: 64, scale: 1.08, speed: 7 },
     { x: 360, y: 104, scale: 0.84, speed: 11 },
@@ -123,12 +123,15 @@ function drawSky(scene) {
 
 function drawClouds(scene) {
     const worldWidth = scene.world.width;
-    const windDrift = (scene.wind ?? 0) * 0.2;
+    const wind = scene.wind ?? 0;
+    const windDirection = wind === 0 ? 1 : Math.sign(wind);
+    const windStrength = Math.abs(wind);
     const nowSeconds = performance.now() / 1000;
 
     for (const cloud of cloudBands) {
         const travel = worldWidth + 260;
-        const x = ((cloud.x + (cloud.speed + windDrift) * nowSeconds) % travel) - 150;
+        const speed = (cloud.speed * 0.35) + (windStrength * 1.35);
+        const x = positiveModulo(cloud.x + (windDirection * speed * nowSeconds), travel) - 150;
         drawCloud(x, cloud.y, cloud.scale);
     }
 }
@@ -282,40 +285,98 @@ function drawTank(tank, frameName) {
 }
 
 function drawTankSprite(tank, baseFrameName) {
-    const frameName = selectTankFrame(tank, baseFrameName);
+    const frameName = tank.isCpu || baseFrameName === "cpuTank" ? "cpuHull" : "playerHull";
     const frame = manifest?.frames?.[frameName];
 
     if (!frame) {
         drawSprite(baseFrameName, tank.x - 48, tank.y - 52, 96, 48);
+        drawTankBarrel(tank);
         return;
     }
 
-    const elevation = tankElevation(tank);
-    const targetHeight = elevation > 58 ? 74 : elevation > 28 ? 62 : 56;
+    const targetHeight = tank.isCpu ? 54 : 56;
     const targetWidth = targetHeight * (frame.w / frame.h);
-    const anchorX = targetWidth * (tank.isCpu ? 0.58 : 0.42);
+    const anchorX = targetWidth * 0.5;
     const footY = tank.y + 4;
-    drawSprite(frameName, tank.x - anchorX, footY - targetHeight, targetWidth, targetHeight);
+    drawSpriteFacing(frameName, tank.x - anchorX, footY - targetHeight, targetWidth, targetHeight, tank.isCpu ? -1 : 1);
+    drawTankBarrel(tank);
 }
 
-function selectTankFrame(tank, baseFrameName) {
-    const prefix = tank.isCpu || baseFrameName === "cpuTank" ? "cpuTank" : "playerTank";
-    const elevation = tankElevation(tank);
-    if (elevation > 58) {
-        return `${prefix}High`;
-    }
-
-    if (elevation > 28) {
-        return `${prefix}Mid`;
-    }
-
-    return `${prefix}Low`;
-}
-
-function tankElevation(tank) {
+function drawTankBarrel(tank) {
+    const facing = tank.isCpu ? -1 : 1;
+    const pivotX = tank.x + (facing * 15);
+    const pivotY = tank.y - 38;
     const angle = Number(tank?.angle ?? (tank?.isCpu ? 138 : 42));
-    const raw = tank?.isCpu ? 180 - angle : angle;
-    return Math.max(5, Math.min(85, raw));
+    const length = 48;
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(-angle * Math.PI / 180);
+
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#070a0d";
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(length, 0);
+    ctx.stroke();
+
+    const metal = ctx.createLinearGradient(0, -5, 0, 5);
+    metal.addColorStop(0, "#f6f4dc");
+    metal.addColorStop(0.28, "#87949f");
+    metal.addColorStop(0.58, "#2d343c");
+    metal.addColorStop(0.82, "#cfd8df");
+    metal.addColorStop(1, "#111720");
+    ctx.strokeStyle = metal;
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(length, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.58)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(5, -3);
+    ctx.lineTo(length - 8, -3);
+    ctx.stroke();
+
+    ctx.fillStyle = "#070a0d";
+    for (let x = 12; x < length - 4; x += 12) {
+        ctx.fillRect(x, -5, 3, 10);
+    }
+
+    ctx.fillStyle = "#1b2028";
+    ctx.fillRect(length - 2, -6, 8, 12);
+    ctx.fillStyle = "#e6edf0";
+    ctx.fillRect(length, -3, 5, 6);
+    ctx.restore();
+
+    drawTurretCap(tank, pivotX, pivotY);
+}
+
+function drawTurretCap(tank, x, y) {
+    ctx.save();
+    const capGradient = ctx.createLinearGradient(x - 16, y - 8, x + 16, y + 8);
+    if (tank.isCpu) {
+        capGradient.addColorStop(0, "#721f13");
+        capGradient.addColorStop(0.5, "#ff7a2f");
+        capGradient.addColorStop(1, "#33100d");
+    } else {
+        capGradient.addColorStop(0, "#073c42");
+        capGradient.addColorStop(0.5, "#22d8cd");
+        capGradient.addColorStop(1, "#08232b");
+    }
+
+    ctx.fillStyle = "#070a0d";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 2, 17, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = capGradient;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 15, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 }
 
 function drawSmokeStack(x, y) {
@@ -471,6 +532,19 @@ function drawSprite(name, x, y, width, height) {
     ctx.drawImage(atlas, frame.x, frame.y, frame.w, frame.h, x, y, width, height);
 }
 
+function drawSpriteFacing(name, x, y, width, height, facing = 1) {
+    if (facing >= 0) {
+        drawSprite(name, x, y, width, height);
+        return;
+    }
+
+    ctx.save();
+    ctx.translate(x + width, y);
+    ctx.scale(-1, 1);
+    drawSprite(name, 0, 0, width, height);
+    ctx.restore();
+}
+
 function fallbackSprite(name, x, y, width, height) {
     ctx.fillStyle = name.includes("cpu") ? "#ec6a5c" : "#50c5b7";
     ctx.fillRect(x, y + height * 0.25, width, height * 0.55);
@@ -540,4 +614,8 @@ function startStatsLoop() {
 function hash2d(x, y) {
     const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
     return Math.abs(Math.floor(value));
+}
+
+function positiveModulo(value, divisor) {
+    return ((value % divisor) + divisor) % divisor;
 }

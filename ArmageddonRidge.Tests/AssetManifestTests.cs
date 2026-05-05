@@ -22,7 +22,7 @@ public sealed class AssetManifestTests
         Assert.True(hasAlpha, "Sprite atlas should be RGBA PNG so transparent pixels stay transparent in browsers.");
 
         var frames = document.RootElement.GetProperty("frames");
-        foreach (var requiredFrame in new[] { "playerTankLow", "playerTankMid", "playerTankHigh", "cpuTankLow", "cpuTankMid", "cpuTankHigh" })
+        foreach (var requiredFrame in new[] { "playerHull", "cpuHull", "playerTankLow", "playerTankMid", "playerTankHigh", "cpuTankLow", "cpuTankMid", "cpuTankHigh" })
         {
             Assert.True(frames.TryGetProperty(requiredFrame, out _), $"Missing gameplay sprite frame {requiredFrame}.");
         }

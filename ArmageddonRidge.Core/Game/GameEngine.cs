@@ -327,7 +327,12 @@ public sealed class GameEngine
         return null;
     }
 
-    private static int NextWind(GameState state) => state.Random.Next(-40, 41);
+    private static int NextWind(GameState state)
+    {
+        var firstGust = state.Random.Next(GameConstants.WindMin, GameConstants.WindMax + 1);
+        var secondGust = state.Random.Next(GameConstants.WindMin, GameConstants.WindMax + 1);
+        return (int)MathF.Round((firstGust + secondGust) / 2f);
+    }
 
     private int CpuBudget(Difficulty difficulty, int round) => difficulty switch
     {
