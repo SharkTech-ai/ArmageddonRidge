@@ -565,7 +565,7 @@
             return new { path = path.ToArray(), cone = Array.Empty<object>() };
         }
 
-        var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.26f), 2, 32);
+        var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.325f), 2, 40);
         var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
         var direction = coneCenter - apex;
         if (direction.LengthSquared() < 0.001f)

@@ -86,7 +86,7 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void PreviewPlayerShotIgnoresWindForTargetingAid()
+    public void PreviewPlayerShotIncludesWindForTargetingAid()
     {
         var engine = CreateEngine();
         var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
@@ -99,7 +99,7 @@ public sealed class GameEngineTests
         var rightWind = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
 
         Assert.NotEmpty(leftWind);
-        Assert.Equal(leftWind, rightWind);
+        Assert.NotEqual(leftWind, rightWind);
     }
 
     [Fact]

@@ -801,10 +801,27 @@ function drawPreviewCone(cone) {
     const right = cone[2];
     const now = performance.now() * 0.001;
 
-    const gradient = ctx.createLinearGradient(apex.x, apex.y, (left.x + right.x) * 0.5, (left.y + right.y) * 0.5);
-    gradient.addColorStop(0, "rgba(126, 226, 213, 0.24)");
-    gradient.addColorStop(1, "rgba(126, 226, 213, 0.04)");
+    const centerX = (left.x + right.x) * 0.5;
+    const centerY = (left.y + right.y) * 0.5;
+    const gradient = ctx.createLinearGradient(apex.x, apex.y, centerX, centerY);
+    gradient.addColorStop(0, "rgba(126, 226, 213, 0.08)");
+    gradient.addColorStop(0.44, "rgba(126, 226, 213, 0.22)");
+    gradient.addColorStop(0.76, "rgba(242, 193, 78, 0.16)");
+    gradient.addColorStop(1, "rgba(236, 106, 92, 0.05)");
     ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(apex.x, apex.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.closePath();
+    ctx.fill();
+
+    const bloomRadius = Math.max(18, Math.hypot(left.x - right.x, left.y - right.y) * 0.62);
+    const bloom = ctx.createRadialGradient(centerX, centerY, 2, centerX, centerY, bloomRadius);
+    bloom.addColorStop(0, "rgba(242, 193, 78, 0.2)");
+    bloom.addColorStop(0.58, "rgba(126, 226, 213, 0.09)");
+    bloom.addColorStop(1, "rgba(126, 226, 213, 0)");
+    ctx.fillStyle = bloom;
     ctx.beginPath();
     ctx.moveTo(apex.x, apex.y);
     ctx.lineTo(left.x, left.y);
@@ -823,8 +840,6 @@ function drawPreviewCone(cone) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const centerX = (left.x + right.x) * 0.5;
-    const centerY = (left.y + right.y) * 0.5;
     ctx.strokeStyle = "rgba(255, 248, 217, 0.28)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
