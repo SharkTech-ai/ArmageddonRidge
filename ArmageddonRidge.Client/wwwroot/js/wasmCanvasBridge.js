@@ -116,6 +116,10 @@ function drawCommand(command) {
             drawPoints(command.points, false);
             if (command.stroke) ctx.stroke();
             break;
+        case "smoothPolyline":
+            drawSmoothPoints(command.points);
+            if (command.stroke) ctx.stroke();
+            break;
         case "text":
             ctx.font = "700 16px system-ui, sans-serif";
             ctx.textBaseline = "top";
@@ -136,6 +140,30 @@ function drawPoints(points, closePath) {
     }
 
     if (closePath) ctx.closePath();
+}
+
+function drawSmoothPoints(points) {
+    ctx.beginPath();
+    if (!points || points.length < 4) return;
+
+    ctx.moveTo(points[0], points[1]);
+    if (points.length === 4) {
+        ctx.lineTo(points[2], points[3]);
+        return;
+    }
+
+    const pointCount = points.length / 2;
+    for (let index = 0; index < pointCount - 1; index++) {
+        const previousIndex = Math.max(0, index - 1) * 2;
+        const currentIndex = index * 2;
+        const nextIndex = (index + 1) * 2;
+        const afterNextIndex = Math.min(pointCount - 1, index + 2) * 2;
+        const cp1x = points[currentIndex] + (points[nextIndex] - points[previousIndex]) / 6;
+        const cp1y = points[currentIndex + 1] + (points[nextIndex + 1] - points[previousIndex + 1]) / 6;
+        const cp2x = points[nextIndex] - (points[afterNextIndex] - points[currentIndex]) / 6;
+        const cp2y = points[nextIndex + 1] - (points[afterNextIndex + 1] - points[currentIndex + 1]) / 6;
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, points[nextIndex], points[nextIndex + 1]);
+    }
 }
 
 function updateStats() {

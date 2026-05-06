@@ -1092,16 +1092,33 @@ function drawPreviewPath(points, color, width) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.beginPath();
-    for (let index = 0; index < points.length; index++) {
-        const point = points[index];
-        if (index === 0) {
-            ctx.moveTo(point.x, point.y);
-        } else {
-            ctx.lineTo(point.x, point.y);
-        }
-    }
+    traceSmoothPreviewPath(points);
     ctx.stroke();
     ctx.setLineDash([]);
+}
+
+function traceSmoothPreviewPath(points) {
+    if (!points?.length) {
+        return;
+    }
+
+    ctx.moveTo(points[0].x, points[0].y);
+    if (points.length === 2) {
+        ctx.lineTo(points[1].x, points[1].y);
+        return;
+    }
+
+    for (let index = 0; index < points.length - 1; index++) {
+        const previous = points[Math.max(0, index - 1)];
+        const current = points[index];
+        const next = points[index + 1];
+        const afterNext = points[Math.min(points.length - 1, index + 2)];
+        const cp1x = current.x + (next.x - previous.x) / 6;
+        const cp1y = current.y + (next.y - previous.y) / 6;
+        const cp2x = next.x - (afterNext.x - current.x) / 6;
+        const cp2y = next.y - (afterNext.y - current.y) / 6;
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, next.x, next.y);
+    }
 }
 
 function drawPreviewCone(cone) {

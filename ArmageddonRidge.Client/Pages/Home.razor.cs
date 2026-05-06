@@ -501,8 +501,8 @@ public partial class Home
             }
         }
 
-        var path = new List<RenderPoint>(Math.Min(48, apexIndex + 1));
-        var step = Math.Max(1, apexIndex / 42);
+        var path = new List<RenderPoint>(Math.Min(80, apexIndex + 1));
+        var step = Math.Max(1, apexIndex / 72);
         for (var i = 0; i <= apexIndex; i += step)
         {
             var point = trail[i];

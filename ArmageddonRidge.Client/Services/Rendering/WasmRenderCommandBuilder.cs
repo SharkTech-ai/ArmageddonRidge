@@ -118,7 +118,7 @@ public sealed class WasmRenderCommandBuilder
     {
         if (preview.Path.Length > 1)
         {
-            commands.Add(new RenderCommand { Op = "polyline", Points = Flatten(preview.Path), Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
+            commands.Add(new RenderCommand { Op = "smoothPolyline", Points = Flatten(preview.Path), Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
         }
 
         if (preview.Cone.Length >= 3)
