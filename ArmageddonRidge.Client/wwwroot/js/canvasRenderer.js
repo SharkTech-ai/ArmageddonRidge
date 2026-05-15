@@ -742,10 +742,14 @@ function drawTank(tank, frameName, hurt = false, shieldHit = false, now = perfor
     ctx.fill();
     ctx.restore();
 
-    drawTankSprite(tank, frameName);
-
     if (tank.shield > 0 || shieldHit) {
         drawTankShield(tank, shieldHit, now);
+    }
+
+    drawTankSprite(tank, frameName);
+
+    if (shieldHit) {
+        drawTankShieldHitGlimmer(tank, now);
     }
 
     if (Number(tank.buriedDepth ?? 0) > 4) {
@@ -764,12 +768,12 @@ function drawTank(tank, frameName, hurt = false, shieldHit = false, now = perfor
 function drawTankShield(tank, shieldHit, now) {
     const shield = Math.max(0, Number(tank.shield ?? 0));
     const strength = clamp01(shield / 120);
-    const bubbleAlpha = shieldHit ? 0.9 : 0.24 + strength * 0.28;
+    const bubbleAlpha = shieldHit ? 0.52 : 0.14 + strength * 0.18;
     const pulse = 0.5 + Math.sin(now * 0.008) * 0.5;
     const centerX = Number(tank.x ?? 0);
     const centerY = Number(tank.y ?? 0) - shieldCenterYOffset;
-    const radiusX = shieldRadiusX;
-    const radiusY = shieldRadiusY;
+    const radiusX = shieldRadiusX - 5;
+    const radiusY = shieldRadiusY - 4;
     const surfaceY = Number(tank.terrainY ?? tank.y);
     const top = centerY - radiusY - 22;
     const clipHeight = Math.max(0, surfaceY - top - 1);
@@ -780,39 +784,39 @@ function drawTankShield(tank, shieldHit, now) {
     ctx.rect(centerX - radiusX - 28, top, (radiusX + 28) * 2, clipHeight);
     ctx.clip();
 
-    const shell = ctx.createRadialGradient(centerX - 22, centerY - 24, 8, centerX, centerY, radiusX + 24);
-    shell.addColorStop(0, `rgba(255, 255, 255, ${0.12 + strength * 0.06})`);
-    shell.addColorStop(0.44, `rgba(121, 214, 255, ${0.05 + strength * 0.08})`);
-    shell.addColorStop(0.76, `rgba(57, 175, 255, ${0.08 + strength * 0.09})`);
-    shell.addColorStop(1, `rgba(57, 175, 255, ${0.2 + strength * 0.16})`);
+    const shell = ctx.createRadialGradient(centerX - 24, centerY - 26, 8, centerX, centerY, radiusX + 20);
+    shell.addColorStop(0, `rgba(255, 255, 255, ${0.06 + strength * 0.035})`);
+    shell.addColorStop(0.52, `rgba(121, 214, 255, ${0.025 + strength * 0.045})`);
+    shell.addColorStop(0.82, `rgba(57, 175, 255, ${0.045 + strength * 0.055})`);
+    shell.addColorStop(1, `rgba(57, 175, 255, ${0.11 + strength * 0.1})`);
     ctx.fillStyle = shell;
     ctx.beginPath();
-    ctx.ellipse(centerX, centerY, radiusX + 8, radiusY + 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(centerX, centerY, radiusX + 5, radiusY + 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.shadowColor = "rgba(121, 214, 255, 0.7)";
-    ctx.shadowBlur = 13 + strength * 12 + (shieldHit ? 12 : 0);
+    ctx.shadowColor = "rgba(121, 214, 255, 0.42)";
+    ctx.shadowBlur = 8 + strength * 7 + (shieldHit ? 8 : 0);
     ctx.strokeStyle = `rgba(136, 226, 255, ${bubbleAlpha})`;
-    ctx.lineWidth = 2.2 + strength * 4.8;
+    ctx.lineWidth = 1.35 + strength * 1.9;
     ctx.beginPath();
     ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.28 + strength * 0.2})`;
-    ctx.lineWidth = 1.2 + strength;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.2 + strength * 0.14})`;
+    ctx.lineWidth = 1 + strength * 0.45;
     ctx.beginPath();
-    ctx.ellipse(centerX - radiusX * 0.04, centerY - radiusY * 0.08, radiusX - 12, radiusY - 10, 0, Math.PI * 1.03, Math.PI * 1.78);
+    ctx.ellipse(centerX - radiusX * 0.04, centerY - radiusY * 0.08, radiusX - 12, radiusY - 10, 0, Math.PI * 1.04, Math.PI * 1.74);
     ctx.stroke();
 
-    ctx.strokeStyle = `rgba(126, 226, 213, ${0.22 + strength * 0.18})`;
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(126, 226, 213, ${0.12 + strength * 0.12})`;
+    ctx.lineWidth = 1;
     for (let i = 0; i < 3; i++) {
         const phase = now * 0.0018 + i * 1.74;
         const start = phase % (Math.PI * 2);
-        const end = start + Math.PI * (0.18 + strength * 0.1);
+        const end = start + Math.PI * (0.14 + strength * 0.08);
         ctx.beginPath();
         ctx.ellipse(centerX, centerY, radiusX - 4 - i * 9, radiusY - 3 - i * 6, 0, start, end);
         ctx.stroke();
@@ -820,23 +824,47 @@ function drawTankShield(tank, shieldHit, now) {
 
     if (shieldHit) {
         const ripple = 0.5 + pulse * 0.5;
-        ctx.strokeStyle = `rgba(224, 250, 255, ${0.72 * (1 - ripple * 0.24)})`;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([9, 7]);
+        ctx.strokeStyle = `rgba(224, 250, 255, ${0.42 * (1 - ripple * 0.26)})`;
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([7, 10]);
         ctx.beginPath();
-        ctx.ellipse(centerX, centerY, radiusX + 8 + ripple * 14, radiusY + 7 + ripple * 11, 0, 0, Math.PI * 2);
+        ctx.ellipse(centerX, centerY, radiusX + 4 + ripple * 10, radiusY + 4 + ripple * 8, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
+    }
 
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 + pulse * 0.28})`;
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 5; i++) {
-            const angle = (Math.PI * 0.4 * i) + now * 0.006;
-            ctx.beginPath();
-            ctx.moveTo(centerX + Math.cos(angle) * (radiusX - 18), centerY + Math.sin(angle) * (radiusY - 14));
-            ctx.lineTo(centerX + Math.cos(angle) * (radiusX + 18), centerY + Math.sin(angle) * (radiusY + 14));
-            ctx.stroke();
-        }
+    ctx.restore();
+}
+
+function drawTankShieldHitGlimmer(tank, now) {
+    const centerX = Number(tank.x ?? 0);
+    const centerY = Number(tank.y ?? 0) - shieldCenterYOffset;
+    const radiusX = shieldRadiusX - 5;
+    const radiusY = shieldRadiusY - 4;
+    const pulse = 0.5 + Math.sin(now * 0.026) * 0.5;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `rgba(236, 254, 255, ${0.42 + pulse * 0.18})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+        const angle = (Math.PI * 0.5 * i) + now * 0.004;
+        const innerX = centerX + Math.cos(angle) * (radiusX - 14);
+        const innerY = centerY + Math.sin(angle) * (radiusY - 11);
+        const outerX = centerX + Math.cos(angle) * (radiusX + 9);
+        const outerY = centerY + Math.sin(angle) * (radiusY + 7);
+        ctx.beginPath();
+        ctx.moveTo(innerX, innerY);
+        ctx.lineTo(outerX, outerY);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.45 + pulse * 0.16})`;
+    for (let i = 0; i < 3; i++) {
+        const angle = now * 0.006 + i * 2.1;
+        const x = centerX + Math.cos(angle) * (radiusX - 10);
+        const y = centerY + Math.sin(angle) * (radiusY - 8);
+        ctx.fillRect(x - 1, y - 1, 2, 2);
     }
 
     ctx.restore();

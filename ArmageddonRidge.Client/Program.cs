@@ -18,6 +18,7 @@ builder.Services.AddScoped<CanvasRenderer>();
 builder.Services.AddScoped<HybridCanvasRenderer>();
 builder.Services.AddScoped<WasmCanvasRenderer>();
 builder.Services.AddScoped<WasmRenderCommandBuilder>();
+builder.Services.AddScoped<WebGpuEffectsRenderer>();
 builder.Services.AddScoped<AudioService>();
 builder.Services.AddScoped<BrowserStorage>();
 

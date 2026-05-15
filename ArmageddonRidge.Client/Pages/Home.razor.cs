@@ -19,6 +19,7 @@ public partial class Home
     private static readonly RenderMode[] RenderModeOptions = Enum.GetValues<RenderMode>();
 
     private ElementReference _canvas;
+    private ElementReference _effectsCanvas;
     private GameState? _state;
     private MatchSettings _settings = new();
     private Difficulty _difficulty = Difficulty.Normal;
@@ -30,6 +31,7 @@ public partial class Home
     private bool _screenShake = true;
     private bool _reducedMotion;
     private bool _targetingComputerEnabledByDefault = true;
+    private bool _webGpuEffectsEnabled = true;
     private RenderMode _renderMode = RenderMode.Hybrid;
     private float _sfxVolume = 0.9f;
     private int _startingCash = GameConstants.StartingCash;
@@ -42,9 +44,16 @@ public partial class Home
     private int _commandCount;
     private int _payloadBytes;
     private bool _simdHardwareAccelerated;
+    private bool _effectsSupported;
+    private bool _effectsActive;
+    private double _effectFrameMs;
+    private int _effectParticleCount;
+    private int _effectSpawnCount;
+    private string _effectFallbackReason = "Not initialized";
     private string _rendererModeLabel = "Hybrid";
     private int _bestScore;
     private bool _rendererReady;
+    private bool _effectsReady;
     private bool _shotPlaybackInProgress;
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
@@ -82,6 +91,10 @@ public partial class Home
 
     private bool CanFirePlayer => _canFire && _state?.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Player;
 
+    private GamePhase VisiblePhase => _state is null
+        ? GamePhase.MainMenu
+        : _shotPlaybackInProgress ? GamePhase.Battle : _state.Phase;
+
     private string BattlefieldPanelCss =>
         $"battlefield-panel{(_playerHurt ? " player-hurt" : "")}{(_cpuHurt ? " cpu-hurt" : "")}{(_playerShieldHit ? " player-shield-hit" : "")}{(_cpuShieldHit ? " cpu-shield-hit" : "")}";
 
@@ -112,7 +125,7 @@ public partial class Home
         ? 50
         : 50;
 
-    private string BattleLayoutCss => _state?.Phase == GamePhase.Battle
+    private string BattleLayoutCss => VisiblePhase == GamePhase.Battle
         ? (_battlePanelCollapsed ? "is-battle panel-collapsed" : "is-battle")
         : string.Empty;
 
@@ -137,7 +150,18 @@ public partial class Home
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
-    private string SimdStatusLabel => _simdHardwareAccelerated ? "Enabled" : "Disabled";
+    private string SimdStatusLabel => _renderMode == RenderMode.Hybrid
+        ? "N/A"
+        : _simdHardwareAccelerated ? "Enabled" : "Disabled";
+
+    private string EffectsStatusLabel =>
+        !_webGpuEffectsEnabled
+            ? "Off"
+            : _effectsActive
+                ? "WebGPU"
+                : _effectsSupported
+                    ? "Ready"
+                    : string.IsNullOrWhiteSpace(_effectFallbackReason) ? "Unavailable" : _effectFallbackReason;
 
     private static string RenderModeLabel(RenderMode mode) => mode switch
     {
@@ -172,6 +196,7 @@ public partial class Home
                 _screenShake = save.Settings.ScreenShake;
                 _reducedMotion = save.Settings.ReducedMotion;
                 _targetingComputerEnabledByDefault = save.Settings.TargetingComputerEnabledByDefault;
+                _webGpuEffectsEnabled = save.Settings.WebGpuEffectsEnabled;
                 _renderMode = save.Settings.RenderMode;
                 _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
                 Renderer.SetMode(_renderMode);
@@ -242,8 +267,11 @@ public partial class Home
                 playerPreShotScene,
                 playerShot,
                 ShieldChanged(playerShieldBefore, _state.PlayerTank.Shield, cpuShieldBefore, _state.CpuTank.Shield),
-                HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank));
-            await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+                HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank),
+                playerHealthBefore,
+                cpuHealthBefore,
+                playerShieldBefore,
+                cpuShieldBefore);
             RefreshPlayerWeapons();
 
             if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
@@ -259,8 +287,11 @@ public partial class Home
                     cpuPreShotScene,
                     cpuShot,
                     ShieldChanged(playerShieldBefore, _state.PlayerTank.Shield, cpuShieldBefore, _state.CpuTank.Shield),
-                    HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank));
-                await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+                    HealthChanged(playerHealthBefore, _state.PlayerTank, cpuHealthBefore, _state.CpuTank),
+                    playerHealthBefore,
+                    cpuHealthBefore,
+                    playerShieldBefore,
+                    cpuShieldBefore);
             }
 
             if (_state.Phase == GamePhase.RoundOver) await PersistSaveAsync();
@@ -273,22 +304,44 @@ public partial class Home
         }
     }
 
-    private async Task PlayResolutionAsync(RenderScene preShotScene, ShotResolution resolution, bool shieldHit, bool healthHit)
+    private async Task PlayResolutionAsync(
+        RenderScene preShotScene,
+        ShotResolution resolution,
+        bool shieldHit,
+        bool healthHit,
+        int playerHealthBefore,
+        int cpuHealthBefore,
+        float playerShieldBefore,
+        float cpuShieldBefore)
     {
         _shotPlaybackInProgress = true;
         Task? impactAudioTask = null;
+        Task? impactFeedbackTask = null;
         try
         {
+            await EnsureRendererAsync();
             var hasNuclear = HasNuclearExplosion(resolution.Explosions);
             await Audio.PlayAsync(hasNuclear ? "nuclear" : "fire");
             impactAudioTask = PlayImpactAudioDuringPlaybackAsync(resolution, shieldHit, healthHit, hasNuclear);
+            impactFeedbackTask = PlayImpactFeedbackDuringPlaybackAsync(resolution, playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+            ApplyEffectsStats(await Effects.SpawnShotEffectsAsync(
+                resolution,
+                preShotScene.Wind,
+                _terrainRevision,
+                shieldHit,
+                healthHit,
+                _reducedMotion,
+                "flight"));
             await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion);
             await impactAudioTask;
+            await impactFeedbackTask;
         }
         catch (JSException ex)
         {
             if (impactAudioTask is not null)
                 await AwaitQuietlyAsync(impactAudioTask);
+            if (impactFeedbackTask is not null)
+                await AwaitQuietlyAsync(impactFeedbackTask);
 
             _state?.EventLog.Add($"Recovered from renderer playback error: {ex.Message}");
         }
@@ -298,6 +351,10 @@ public partial class Home
         }
 
         if (resolution.Performance.TerrainColumnsTouched > 0) MarkTerrainChanged();
+        if (resolution.Performance.TerrainColumnsTouched > 0)
+        {
+            ApplyEffectsStats(await Effects.SpawnTerrainEffectsAsync(resolution, preShotScene.Wind, _terrainRevision, _reducedMotion));
+        }
 
         await RenderSceneCoreAsync(force: true);
     }
@@ -323,10 +380,44 @@ public partial class Home
             await Audio.PlayAsync(hasNuclear || HasLargeExplosion(resolution.Explosions) ? "largeExplosion" : "smallExplosion");
     }
 
+    private async Task PlayImpactFeedbackDuringPlaybackAsync(
+        ShotResolution resolution,
+        int playerHealthBefore,
+        int cpuHealthBefore,
+        float playerShieldBefore,
+        float cpuShieldBefore)
+    {
+        if (_state is null) return;
+
+        var willPulse =
+            TankHealth(_state.PlayerTank) < Math.Max(0, playerHealthBefore)
+            || TankHealth(_state.CpuTank) < Math.Max(0, cpuHealthBefore)
+            || _state.PlayerTank.Shield < playerShieldBefore
+            || _state.CpuTank.Shield < cpuShieldBefore;
+        if (!willPulse) return;
+
+        var delay = EstimateImpactFeedbackDelayMs(resolution);
+        if (delay > 0) await Task.Delay(delay);
+
+        await ApplyDamageFeedbackAsync(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
+    }
+
     private int EstimateImpactAudioDelayMs(ShotResolution resolution)
     {
         if (_reducedMotion) return 120;
 
+        var visualDuration = EstimateShotVisualDurationMs(resolution);
+        return Math.Clamp((int)MathF.Round(visualDuration * 0.86f), 120, 3000);
+    }
+
+    private static int EstimateImpactFeedbackDelayMs(ShotResolution resolution)
+    {
+        var visualDuration = EstimateShotVisualDurationMs(resolution);
+        return Math.Clamp(visualDuration - 45, 80, 3400);
+    }
+
+    private static int EstimateShotVisualDurationMs(ShotResolution resolution)
+    {
         var trailCount = Math.Max(2, resolution.Trail.Count);
         var visualDuration = resolution.WeaponId switch
         {
@@ -338,9 +429,9 @@ public partial class Home
         };
 
         if (resolution.Intercepted)
-            visualDuration = Math.Clamp(visualDuration, 2900, 3400);
+            visualDuration = Math.Clamp((int)MathF.Round(visualDuration * 2.6f), 2900, 3400);
 
-        return Math.Clamp((int)MathF.Round(visualDuration * 0.86f), 120, 3000);
+        return visualDuration;
     }
 
     private async Task BuyWeaponAsync(string weaponId)
@@ -369,18 +460,29 @@ public partial class Home
 
         await EnsureRendererAsync();
         var includeTerrain = force || _lastSentTerrainRevision != _terrainRevision;
-        var stats = await Renderer.RenderAsync(BuildScene(includeTerrain));
+        var scene = BuildScene(includeTerrain);
+        var stats = await Renderer.RenderAsync(scene);
         if (includeTerrain) _lastSentTerrainRevision = _terrainRevision;
 
         ApplyStats(stats);
+        ApplyEffectsStats(await Effects.SetSceneAsync(scene, _terrainRevision, _reducedMotion));
     }
 
     private async Task EnsureRendererAsync()
     {
-        if (_rendererReady || _state is null) return;
+        if (_state is null) return;
 
-        await Renderer.InitializeAsync(_canvas);
-        _rendererReady = true;
+        if (!_rendererReady)
+        {
+            await Renderer.InitializeAsync(_canvas);
+            _rendererReady = true;
+        }
+
+        if (!_effectsReady)
+        {
+            ApplyEffectsStats(await Effects.InitializeAsync(_effectsCanvas, _webGpuEffectsEnabled));
+            _effectsReady = true;
+        }
     }
 
     private RenderScene BuildScene(bool includeTerrain = true)
@@ -761,6 +863,19 @@ public partial class Home
         if (_state?.Phase == GamePhase.Battle) await RenderSceneAsync();
     }
 
+    private async Task HandleWebGpuEffectsChangedAsync(ChangeEventArgs args)
+    {
+        _webGpuEffectsEnabled = CheckedValue(args);
+        _effectsReady = false;
+        ApplyEffectsStats(await Effects.SetEnabledAsync(_webGpuEffectsEnabled));
+        await PersistSaveAsync();
+        if (_state is not null)
+        {
+            await EnsureRendererAsync();
+            await RenderSceneCoreAsync(force: true);
+        }
+    }
+
     private async Task HandleRenderModeChangedAsync(ChangeEventArgs args)
     {
         if (!Enum.TryParse<RenderMode>(args.Value?.ToString(), out var mode)) return;
@@ -798,13 +913,15 @@ public partial class Home
                 Difficulty: _difficulty,
                 StartingCash: _startingCash,
                 TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault,
-                RenderMode: _renderMode));
+                RenderMode: _renderMode,
+                WebGpuEffectsEnabled: _webGpuEffectsEnabled));
         await Storage.SetAsync("armageddon-ridge-save", save);
     }
 
     public async ValueTask DisposeAsync()
     {
         StopPerfLoop();
+        await Effects.DisposeAsync();
         await Renderer.DisposeAsync();
         await Audio.DisposeAsync();
     }
@@ -823,6 +940,18 @@ public partial class Home
         _payloadBytes = stats.PayloadBytes;
         _simdHardwareAccelerated = stats.SimdHardwareAccelerated;
         _rendererModeLabel = stats.Mode;
+    }
+
+    private void ApplyEffectsStats(WebGpuEffectsStats? stats)
+    {
+        if (stats is null) return;
+
+        _effectsSupported = stats.Supported;
+        _effectsActive = stats.Enabled;
+        _effectFrameMs = stats.FrameMs;
+        _effectParticleCount = stats.ParticleCount;
+        _effectSpawnCount = stats.SpawnCount;
+        _effectFallbackReason = stats.FallbackReason;
     }
 
     private void StartPerfLoop()
@@ -847,6 +976,7 @@ public partial class Home
             {
                 await Task.Delay(250, cancellationToken);
                 ApplyStats(await Renderer.GetStatsAsync());
+                ApplyEffectsStats(await Effects.GetStatsAsync());
                 await InvokeAsync(StateHasChanged);
             }
             catch (OperationCanceledException)
