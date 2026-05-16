@@ -33,6 +33,7 @@ const spriteManifestVersion = "2026-05-04-genesis-v7";
 const patriotInterceptDurationScale = 2.6;
 const patriotInterceptMinDuration = 2900;
 const patriotInterceptMaxDuration = 3400;
+const patriotInterceptBannerExtraHoldMs = 500;
 const patriotReticleScale = 1.65;
 const shieldRadiusX = 76;
 const shieldRadiusY = 58;
@@ -84,7 +85,6 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     const shotScene = prepareScene(scene);
     shotInProgress = true;
     const playbackOptions = options ?? {};
-    const suppressCanvasPatriotCountermeasure = Boolean(playbackOptions.suppressCanvasPatriotCountermeasure);
     let points = Array.isArray(trail) ? trail : Array.from(trail);
     if (playbackOptions.intercepted && playbackOptions.interceptX !== undefined && playbackOptions.interceptY !== undefined) {
         const patriotPlayback = createPatriotPlayback(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
@@ -114,6 +114,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     const duration = playbackOptions.intercepted
         ? clamp(baseDuration * patriotInterceptDurationScale, patriotInterceptMinDuration, patriotInterceptMaxDuration)
         : baseDuration;
+    const extraHoldMs = playbackOptions.intercepted ? patriotInterceptBannerExtraHoldMs : 0;
     const started = performance.now();
 
     return new Promise(resolve => {
@@ -146,7 +147,9 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
 
         const tick = now => {
             try {
-                const t = Math.min(1, (now - started) / duration);
+                const elapsed = now - started;
+                const t = Math.min(1, elapsed / duration);
+                const holdProgress = extraHoldMs > 0 ? clamp((elapsed - duration) / extraHoldMs, 0, 1) : 1;
                 const basePathProgress = shotPathProgress(t, weaponId);
                 const patriotTimelineProgress = playbackOptions.patriot ? t : basePathProgress;
                 const pathProgress = playbackOptions.patriot
@@ -156,11 +159,9 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                 const shake = screenShake && highImpactShake ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
                 drawScene(shotScene, shake, -shake * 0.4);
                 drawTrail(points, count, weaponId, activeExplosions, playbackOptions.visualKind);
-                if (!suppressCanvasPatriotCountermeasure) {
-                    drawPatriotCountermeasure(shotScene, playbackOptions, patriotTimelineProgress);
-                }
+                drawPatriotCountermeasure(shotScene, playbackOptions, patriotTimelineProgress, holdProgress);
                 drawTriggeredExplosions(stagedExplosions, count, now, stagedStarts);
-                if (t < 1) {
+                if (t < 1 || holdProgress < 1) {
                     requestAnimationFrame(tick);
                     return;
                 }
@@ -169,9 +170,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                     try {
                         drawScene(shotScene, 0, 0);
                         drawTrail(points, points.length, weaponId, activeExplosions, playbackOptions.visualKind);
-                        if (!suppressCanvasPatriotCountermeasure) {
-                            drawPatriotCountermeasure(shotScene, playbackOptions, 1);
-                        }
+                        drawPatriotCountermeasure(shotScene, playbackOptions, 1, 1);
                         drawTriggeredExplosions(stagedExplosions, points.length, performance.now(), stagedStarts);
                         finish();
                     } catch (error) {
@@ -1581,7 +1580,7 @@ function drawDarkEagleTrail(points, count) {
     drawOrientedSprite("missile", last.x, last.y, 58, 22, Math.atan2(last.y - prev.y, last.x - prev.x));
 }
 
-function drawPatriotCountermeasure(scene, options, pathProgress) {
+function drawPatriotCountermeasure(scene, options, pathProgress, bannerHoldProgress = 0) {
     if (!options?.intercepted || options.interceptX === undefined || options.interceptY === undefined) {
         return;
     }
@@ -1642,8 +1641,10 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
         drawPatriotLaunchPlume(startX, startY, launchProgress);
         drawPatriotFlightTrail(startX, startY, controlX, controlY, endX, endY, missileProgress);
         drawPatriotInterceptGuide(apexX, apexY, endX, endY, launchProgress, now);
-        if (launchProgress > 0.72) {
-            drawInterceptBanner(endX, endY, clamp((launchProgress - 0.72) / 0.28, 0, 1), now);
+        const bannerEntryProgress = clamp((launchProgress - 0.58) / 0.28, 0, 1);
+        const bannerHold = clamp01(Number(bannerHoldProgress ?? 0));
+        if (bannerEntryProgress > 0 || bannerHold > 0) {
+            drawInterceptBanner(endX, endY, bannerEntryProgress, now, bannerHold);
         }
 
         const glow = ctx.createRadialGradient(x, y, 1, x, y, 44);
@@ -1661,10 +1662,19 @@ function drawPatriotCountermeasure(scene, options, pathProgress) {
     ctx.restore();
 }
 
-function drawInterceptBanner(x, y, progress, now) {
-    const rise = Math.sin(progress * Math.PI) * 24;
-    const scale = 0.82 + Math.sin(progress * Math.PI) * 0.28;
-    const alpha = clamp01(Math.sin(progress * Math.PI));
+function drawInterceptBanner(x, y, progress, now, holdProgress = 0) {
+    const entry = clamp01(progress);
+    const hold = clamp01(holdProgress);
+    const entryEase = 1 - Math.pow(1 - entry, 3);
+    const holdFade = hold <= 0.68 ? 1 : clamp01((1 - hold) / 0.32);
+    const alpha = clamp01(entryEase * holdFade);
+    if (alpha <= 0.01) {
+        return;
+    }
+
+    const bounce = Math.sin(entry * Math.PI);
+    const rise = entryEase * 24 + hold * 10;
+    const scale = 0.82 + entryEase * 0.18 + bounce * 0.1 - hold * 0.03;
     const text = "INTERCEPTED!";
     ctx.save();
     ctx.translate(x, y - 92 - rise);

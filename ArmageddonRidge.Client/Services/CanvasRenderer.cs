@@ -32,10 +32,10 @@ public sealed class CanvasRenderer(HybridCanvasRenderer hybrid, WasmCanvasRender
         return await renderer.RenderAsync(scene);
     }
 
-    public async ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake, bool suppressCanvasPatriotCountermeasure = false)
+    public async ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake)
     {
         var renderer = await EnsureActiveAsync();
-        await renderer.PlayShotAsync(scene, resolution, screenShake, suppressCanvasPatriotCountermeasure);
+        await renderer.PlayShotAsync(scene, resolution, screenShake);
     }
 
     public async ValueTask<RenderStats?> GetStatsAsync()

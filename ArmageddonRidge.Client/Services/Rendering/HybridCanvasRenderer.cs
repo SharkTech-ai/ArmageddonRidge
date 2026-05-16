@@ -25,11 +25,11 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
         return stats with { Mode = "Hybrid (JS + WASM)", SimdHardwareAccelerated = false };
     }
 
-    public async ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake, bool suppressCanvasPatriotCountermeasure = false)
+    public async ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake)
     {
         if (_module is null) return;
 
-        await PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId, resolution.VisualKind.ToString(), suppressCanvasPatriotCountermeasure);
+        await PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId, resolution.VisualKind.ToString());
     }
 
     public async ValueTask<RenderStats?> GetStatsAsync()
@@ -54,8 +54,7 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
         bool intercepted = false,
         Vector2? interceptPoint = null,
         string? ownerTankId = null,
-        string? visualKind = null,
-        bool suppressCanvasPatriotCountermeasure = false)
+        string? visualKind = null)
     {
         if (_module is null) return;
 
@@ -102,8 +101,7 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
                 interceptX = interceptPoint?.X,
                 interceptY = interceptPoint?.Y,
                 ownerTankId,
-                visualKind,
-                suppressCanvasPatriotCountermeasure
+                visualKind
             });
     }
 }

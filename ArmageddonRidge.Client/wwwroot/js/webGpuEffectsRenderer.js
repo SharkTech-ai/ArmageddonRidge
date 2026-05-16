@@ -784,15 +784,14 @@ function estimateImpactDelayMs(payload) {
 function startPatriotInterception(payload) {
     clearPatriotState();
 
-    if (!payload?.patriotOverlayEnabled || !payload?.intercepted || payload.interceptX === undefined || payload.interceptY === undefined || !currentScene) {
+    const interceptX = Number(payloadValue(payload, "interceptX"));
+    const interceptY = Number(payloadValue(payload, "interceptY"));
+    if (!truthyPayloadValue(payload, "patriotOverlayEnabled") || !truthyPayloadValue(payload, "intercepted") || !Number.isFinite(interceptX) || !Number.isFinite(interceptY) || !currentScene) {
         return;
     }
 
     const trail = payload?.trail ?? [];
-    const intercept = { x: Number(payload.interceptX), y: Number(payload.interceptY) };
-    if (!Number.isFinite(intercept.x) || !Number.isFinite(intercept.y)) {
-        return;
-    }
+    const intercept = { x: interceptX, y: interceptY };
 
     const patriot = createPatriotPlayback(trail, intercept);
     const incomingOwner = String(payload.ownerTankId ?? "");
@@ -832,7 +831,6 @@ function startPatriotInterception(payload) {
         burstSpawned: false,
         seed: Math.random() * 1000
     };
-
     spawnRadialEffect(apexX, apexY, 96, 0.32, radialKinds.flash, 0.5, [0.66, 0.9, 1, 0.18], { softness: 0.62, seed: patriotState.seed });
     startLoop();
 }
@@ -896,6 +894,18 @@ function emitPatriotEffects(dt, now) {
     if (progress >= 1 && elapsed > state.duration + 260) {
         clearPatriotState();
     }
+}
+
+function payloadValue(payload, camelName) {
+    if (!payload) return undefined;
+    if (payload[camelName] !== undefined) return payload[camelName];
+    const pascalName = camelName.charAt(0).toUpperCase() + camelName.slice(1);
+    return payload[pascalName];
+}
+
+function truthyPayloadValue(payload, camelName) {
+    const value = payloadValue(payload, camelName);
+    return value === true || value === "true" || value === 1;
 }
 
 function emitPatriotLockMotes(state, alpha, now) {
@@ -1081,7 +1091,7 @@ function spawnExplosion(explosion, payload, wind) {
     const radius = Math.max(12, Number(explosion.radius ?? 36));
     const terrainRadius = Math.max(radius * 0.6, Number(explosion.terrainRadius ?? radius));
     if (isPatriotExplosion(explosion, payload)) {
-        if (!payload?.patriotOverlayEnabled) return;
+        if (!truthyPayloadValue(payload, "patriotOverlayEnabled")) return;
         spawnPatriotImpactExplosion(x, y, radius, wind);
         return;
     }
@@ -1154,7 +1164,7 @@ function isDoomsdayExplosion(explosion, payload, radius) {
 
 function isPatriotExplosion(explosion, payload) {
     const visual = explosionIdentity(explosion, payload);
-    return visual.includes("patriot") || Boolean(payload?.intercepted && Number(explosion?.terrainRadius ?? 0) <= 0);
+    return visual.includes("patriot") || Boolean(truthyPayloadValue(payload, "intercepted") && Number(explosion?.terrainRadius ?? 0) <= 0);
 }
 
 function spawnPatriotImpactExplosion(x, y, radius, wind) {

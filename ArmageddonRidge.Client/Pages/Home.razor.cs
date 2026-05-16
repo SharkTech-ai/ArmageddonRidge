@@ -338,12 +338,7 @@ public partial class Home
                 "flight",
                 _renderMode == RenderMode.Hybrid);
             ApplyEffectsStats(effectsStats);
-            var suppressCanvasPatriotCountermeasure =
-                resolution.Intercepted &&
-                _renderMode == RenderMode.Hybrid &&
-                _webGpuEffectsEnabled &&
-                effectsStats?.Enabled == true;
-            await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion, suppressCanvasPatriotCountermeasure);
+            await Renderer.PlayShotAsync(preShotScene, resolution, _screenShake && !_reducedMotion);
             await impactAudioTask;
             await impactFeedbackTask;
             if (resolution.RoundEnded && hasNuclear)

@@ -11,7 +11,7 @@ public interface IGameRenderer : IAsyncDisposable
 
     ValueTask<RenderStats?> RenderAsync(RenderScene scene);
 
-    ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake, bool suppressCanvasPatriotCountermeasure = false);
+    ValueTask PlayShotAsync(RenderScene scene, ShotResolution resolution, bool screenShake);
 
     ValueTask<RenderStats?> GetStatsAsync();
 }
