@@ -47,6 +47,7 @@ public sealed record SaveGame(
 /// <param name="StartingCash">Default player cash for new runs.</param>
 /// <param name="TargetingComputerEnabledByDefault">Whether the targeting computer is granted without shop purchase.</param>
 /// <param name="RenderMode">Preferred battlefield renderer backend.</param>
+/// <param name="WebGpuEffectsEnabled">Whether the optional WebGPU visual effects overlay should run when supported.</param>
 public sealed record GameSettings(
     float MasterVolume = 0.8f,
     float SfxVolume = 0.9f,
@@ -57,4 +58,5 @@ public sealed record GameSettings(
     Difficulty Difficulty = Difficulty.Normal,
     int StartingCash = GameConstants.StartingCash,
     bool TargetingComputerEnabledByDefault = true,
-    RenderMode RenderMode = RenderMode.Hybrid);
+    RenderMode RenderMode = RenderMode.Hybrid,
+    bool WebGpuEffectsEnabled = true);

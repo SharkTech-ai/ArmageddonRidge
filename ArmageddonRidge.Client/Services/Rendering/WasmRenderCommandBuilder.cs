@@ -162,17 +162,17 @@ public sealed class WasmRenderCommandBuilder
 
         if (tank.Shield > 0)
         {
-            var alpha = Math.Clamp(tank.Shield / 120f, 0.16f, 0.48f);
+            var alpha = Math.Clamp(tank.Shield / 120f, 0.12f, 0.28f);
             commands.Add(new RenderCommand
             {
                 Op = "ellipse",
                 X = tank.X,
                 Y = baseY - GameConstants.ShieldCollisionCenterYOffset,
-                W = GameConstants.ShieldCollisionRadiusX,
-                H = GameConstants.ShieldCollisionRadiusY,
-                Fill = $"rgba(117,213,255,{alpha * 0.16f:0.###})",
-                Stroke = $"rgba(117,213,255,{alpha:0.###})",
-                LineWidth = 2
+                W = GameConstants.ShieldCollisionRadiusX - 5,
+                H = GameConstants.ShieldCollisionRadiusY - 4,
+                Fill = $"rgba(117,213,255,{alpha * 0.09f:0.###})",
+                Stroke = $"rgba(136,226,255,{alpha:0.###})",
+                LineWidth = 1.5f
             });
         }
     }

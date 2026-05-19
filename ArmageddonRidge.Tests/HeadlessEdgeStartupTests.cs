@@ -50,6 +50,8 @@ public sealed class HeadlessEdgeStartupTests
     private static void AssertCleanBoot(BrowserSmokeResult result)
     {
         Assert.True(result.GameRootRendered, "Blazor did not render .game-root.");
+        Assert.True(result.BattlefieldRendered, "The battlefield canvas did not render after starting a duel.");
+        Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.Empty(result.ConsoleErrors);
         Assert.Empty(result.Exceptions);
         Assert.Empty(result.NetworkFailures);
@@ -211,9 +213,34 @@ public sealed class HeadlessEdgeStartupTests
             await client.NavigateAsync(appUrl);
             await Task.Delay(BrowserStartupTimeout);
             var gameRootRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.game-root'))");
+            if (gameRootRendered)
+            {
+                await client.EvaluateBooleanAsync("""
+                    (() => {
+                        if (!window.AudioContext?.prototype?.resume) return true;
+                        const resume = window.AudioContext.prototype.resume;
+                        window.AudioContext.prototype.resume = function() {
+                            try {
+                                const result = resume.call(this);
+                                return result?.catch ? result.catch(() => {}) : Promise.resolve();
+                            } catch {
+                                return Promise.resolve();
+                            }
+                        };
+                        return true;
+                    })()
+                    """);
+                await client.ClickButtonByTextAsync("New Duel");
+                await Task.Delay(TimeSpan.FromSeconds(2));
+            }
+
+            var battlefieldRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield'))");
+            var effectsCanvasRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield-effects'))");
 
             return new BrowserSmokeResult(
                 gameRootRendered,
+                battlefieldRendered,
+                effectsCanvasRendered,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
@@ -330,6 +357,8 @@ public sealed class HeadlessEdgeStartupTests
 
     private sealed record BrowserSmokeResult(
         bool GameRootRendered,
+        bool BattlefieldRendered,
+        bool EffectsCanvasRendered,
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
@@ -413,6 +442,68 @@ public sealed class HeadlessEdgeStartupTests
             if (!runtimeResult.TryGetProperty("value", out var value)) return false;
             return value.ValueKind == JsonValueKind.True;
         }
+
+        public async Task ClickButtonByTextAsync(string text)
+        {
+            var center = await EvaluatePointAsync($$"""
+                (() => {
+                    const wanted = {{JsonSerializer.Serialize(text)}};
+                    const button = Array.from(document.querySelectorAll('button'))
+                        .find(candidate => candidate.textContent.trim() === wanted);
+                    if (!button) return null;
+                    const rect = button.getBoundingClientRect();
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                })()
+                """);
+            if (center is null)
+            {
+                throw new InvalidOperationException($"Could not find button with text '{text}'.");
+            }
+
+            await SendMouseAsync("mouseMoved", center.X, center.Y, "none", 0);
+            await SendMouseAsync("mousePressed", center.X, center.Y, "left", 1);
+            await SendMouseAsync("mouseReleased", center.X, center.Y, "left", 1);
+            await SendAsync("Runtime.evaluate", new Dictionary<string, object?>
+            {
+                ["expression"] = $$"""
+                    (() => {
+                        const wanted = {{JsonSerializer.Serialize(text)}};
+                        const button = Array.from(document.querySelectorAll('button'))
+                            .find(candidate => candidate.textContent.trim() === wanted);
+                        if (!button) return false;
+                        button.scrollIntoView({ block: 'center', inline: 'center' });
+                        button.focus();
+                        button.click();
+                        return true;
+                    })()
+                    """,
+                ["returnByValue"] = true
+            });
+        }
+
+        private async Task<ViewportPoint?> EvaluatePointAsync(string expression)
+        {
+            var result = await SendAsync("Runtime.evaluate", new Dictionary<string, object?>
+            {
+                ["expression"] = expression,
+                ["returnByValue"] = true
+            });
+
+            if (!result.TryGetProperty("result", out var runtimeResult)) return null;
+            if (!runtimeResult.TryGetProperty("value", out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return null;
+            if (!value.TryGetProperty("x", out var x) || !value.TryGetProperty("y", out var y)) return null;
+            return new ViewportPoint(x.GetDouble(), y.GetDouble());
+        }
+
+        private Task SendMouseAsync(string type, double x, double y, string button, int clickCount) =>
+            SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object?>
+            {
+                ["type"] = type,
+                ["x"] = x,
+                ["y"] = y,
+                ["button"] = button,
+                ["clickCount"] = clickCount
+            });
 
         private async Task<JsonElement> SendAsync(string method, Dictionary<string, object?>? parameters = null)
         {
@@ -562,4 +653,6 @@ public sealed class HeadlessEdgeStartupTests
             _cts.Dispose();
         }
     }
+
+    private sealed record ViewportPoint(double X, double Y);
 }
