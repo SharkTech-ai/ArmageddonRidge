@@ -2451,13 +2451,17 @@ function drawPenetratorShock(explosion, radius, progress) {
 
 function sizeCanvas() {
     const rect = canvas.getBoundingClientRect();
-    const nextWidth = Math.max(1, Math.floor(rect.width * devicePixelRatio));
-    const nextHeight = Math.max(1, Math.floor(rect.height * devicePixelRatio));
+    const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const nextWidth = Math.max(1, Math.floor(rect.width * ratio));
+    const nextHeight = Math.max(1, Math.floor(rect.height * ratio));
     if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
         canvas.width = nextWidth;
         canvas.height = nextHeight;
         ctx.imageSmoothingEnabled = false;
+        return true;
     }
+
+    return false;
 }
 
 function updateStats() {
@@ -2473,9 +2477,9 @@ function startStatsLoop() {
     }
 
     const tick = () => {
-        const started = performance.now();
-        if (lastScene && !shotInProgress) {
-            sizeCanvas();
+        const resized = sizeCanvas();
+        if (lastScene && !shotInProgress && resized) {
+            const started = performance.now();
             drawScene(lastScene, 0, 0);
             renderMs = performance.now() - started;
         }

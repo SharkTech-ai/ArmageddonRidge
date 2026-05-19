@@ -50,8 +50,15 @@ public partial class Home
     private double _effectPostProcessMs;
     private double _effectSourceCopyMs;
     private int _effectParticleCount;
+    private int _effectActiveParticleCount;
+    private int _effectParticleCapacity;
     private int _effectRadialEffectCount;
     private int _effectSpawnCount;
+    private double _effectOverlayScale = 1;
+    private double _effectCanvasPixelRatio = 1;
+    private int _effectSourceCopyCadence;
+    private double _effectGpuQueueMs;
+    private string _effectPerfMode = "adaptive";
     private string _effectQualityTier = "n/a";
     private string _effectFallbackReason = "Not initialized";
     private string _rendererModeLabel = "Hybrid";
@@ -968,8 +975,15 @@ public partial class Home
         _effectPostProcessMs = stats.PostProcessMs;
         _effectSourceCopyMs = stats.SourceCopyMs;
         _effectParticleCount = stats.ParticleCount;
+        _effectActiveParticleCount = stats.ActiveParticleCount;
+        _effectParticleCapacity = stats.ParticleCapacity;
         _effectRadialEffectCount = stats.RadialEffectCount;
         _effectSpawnCount = stats.SpawnCount;
+        _effectOverlayScale = stats.OverlayScale;
+        _effectCanvasPixelRatio = stats.CanvasPixelRatio;
+        _effectSourceCopyCadence = stats.SourceCopyCadence;
+        _effectGpuQueueMs = stats.GpuQueueMs;
+        _effectPerfMode = string.IsNullOrWhiteSpace(stats.PerfMode) ? "adaptive" : stats.PerfMode;
         _effectQualityTier = string.IsNullOrWhiteSpace(stats.QualityTier) ? "n/a" : stats.QualityTier;
         _effectFallbackReason = stats.FallbackReason;
     }
