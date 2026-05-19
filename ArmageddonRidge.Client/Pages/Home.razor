@@ -52,10 +52,10 @@
                     <div class="@PlayerVersusHealthCss">
                         <div class="fighter-label">
                             <span>Player</span>
-                            <strong>@TankHealth(_state.PlayerTank) HP</strong>
+                            <strong>@DisplayTankHealth(_state.PlayerTank, true) HP</strong>
                         </div>
                         <div class="fighter-bar health">
-                            <span style="width:@TankHealthWidth(_state.PlayerTank)"></span>
+                            <span style="width:@TankHealthWidth(_state.PlayerTank, true)"></span>
                         </div>
                         <div class="fighter-bar shield">
                             <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
@@ -71,10 +71,10 @@
                     <div class="@CpuVersusHealthCss">
                         <div class="fighter-label">
                             <span>@_state.CpuTank.Name</span>
-                            <strong>@TankHealth(_state.CpuTank) HP</strong>
+                            <strong>@DisplayTankHealth(_state.CpuTank, false) HP</strong>
                         </div>
                         <div class="fighter-bar health">
-                            <span style="width:@TankHealthWidth(_state.CpuTank)"></span>
+                            <span style="width:@TankHealthWidth(_state.CpuTank, false)"></span>
                         </div>
                         <div class="fighter-bar shield">
                             <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
@@ -123,6 +123,7 @@
                         <div class="dock-actions" aria-label="Dock battle controls">
                             <button title="Dock controls left" @onclick="DockBattlePanelLeft">L</button>
                             <button title="Dock controls right" @onclick="DockBattlePanelRight">R</button>
+                            <button title="Toggle performance overlay" @onclick="TogglePerf">FPS</button>
                         </div>
                         @if (_battlePanelCollapsed)
                         {

@@ -66,6 +66,8 @@ public partial class Home
     private bool _rendererReady;
     private bool _effectsReady;
     private bool _shotPlaybackInProgress;
+    private int? _displayPlayerHealth;
+    private int? _displayCpuHealth;
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
     private CancellationTokenSource? _perfLoop;
@@ -130,7 +132,7 @@ public partial class Home
             ? 15
             : _battlePanelAnchor == "right"
                 ? 85
-                : _state.CpuTank.Position.X >= GameConstants.WorldWidth * 0.5f ? 15 : 85;
+                : _state.PlayerTank.Position.X < GameConstants.WorldWidth * 0.5f ? 82 : 18;
 
     private double BattlePanelBaseTopPercent => _state is null
         ? 50
@@ -273,6 +275,7 @@ public partial class Home
             var cpuShieldBefore = _state.CpuTank.Shield;
             var playerPreShotScene = BuildScene();
             var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
+            HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
             RecordTracerTrail(playerShot.Trail);
             await PlayResolutionAsync(
                 playerPreShotScene,
@@ -294,6 +297,7 @@ public partial class Home
                 cpuShieldBefore = _state.CpuTank.Shield;
                 var cpuPreShotScene = BuildScene();
                 var cpuShot = Engine.FireCurrentTurn(_state, _settings);
+                HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
                 await PlayResolutionAsync(
                     cpuPreShotScene,
                     cpuShot,
@@ -363,6 +367,7 @@ public partial class Home
         finally
         {
             _shotPlaybackInProgress = false;
+            ReleaseDisplayedHealth();
         }
 
         if (resolution.Performance.TerrainColumnsTouched > 0) MarkTerrainChanged();
@@ -688,10 +693,13 @@ public partial class Home
         return weaponId == WeaponIds.PeaShell || count < 0 ? "inf" : count.ToString();
     }
 
-    private static int TankHealth(Tank tank) => Math.Max(0, tank.Health);
+    private int DisplayTankHealth(Tank tank, bool player) =>
+        Math.Max(0, player ? _displayPlayerHealth ?? tank.Health : _displayCpuHealth ?? tank.Health);
 
-    private static string TankHealthWidth(Tank tank) =>
-        $"{Math.Clamp(TankHealth(tank) / (float)Math.Max(tank.MaxHealth, 1), 0, 1) * 100:0}%";
+    private string TankHealthWidth(Tank tank, bool player) =>
+        $"{Math.Clamp(DisplayTankHealth(tank, player) / (float)Math.Max(tank.MaxHealth, 1), 0, 1) * 100:0}%";
+
+    private static int TankHealth(Tank tank) => Math.Max(0, tank.Health);
 
     private static string TankShieldWidth(Tank tank) =>
         $"{Math.Clamp(MathF.Max(0, tank.Shield) / 120f, 0, 1) * 100:0}%";
@@ -710,6 +718,7 @@ public partial class Home
         _cpuHurt = TankHealth(_state.CpuTank) < Math.Max(0, cpuHealthBefore);
         _playerShieldHit = _state.PlayerTank.Shield < playerShieldBefore;
         _cpuShieldHit = _state.CpuTank.Shield < cpuShieldBefore;
+        ReleaseDisplayedHealth();
 
         if (!AnyTankFeedback) return;
 
@@ -733,6 +742,18 @@ public partial class Home
         _cpuHurt = false;
         _playerShieldHit = false;
         _cpuShieldHit = false;
+    }
+
+    private void HoldDisplayedHealth(int playerHealthBefore, int cpuHealthBefore)
+    {
+        _displayPlayerHealth = Math.Max(0, playerHealthBefore);
+        _displayCpuHealth = Math.Max(0, cpuHealthBefore);
+    }
+
+    private void ReleaseDisplayedHealth()
+    {
+        _displayPlayerHealth = null;
+        _displayCpuHealth = null;
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs args)

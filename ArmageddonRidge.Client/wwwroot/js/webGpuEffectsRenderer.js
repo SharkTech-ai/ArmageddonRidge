@@ -2455,30 +2455,32 @@ fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
     }
 
     let intensity = clamp(uniforms.weatherIntensity, 0.0, 1.0);
-    let densityScale = select(0.65, 1.0, uniforms.qualityLevel > 1.5) * select(0.55, 1.0, uniforms.qualityLevel > 0.5);
+    let densityScale = select(0.45, 0.72, uniforms.qualityLevel > 1.5) * select(0.5, 1.0, uniforms.qualityLevel > 0.5);
     let pixel = input.uv * uniforms.canvasSize;
     let wind = uniforms.wind * 0.0018;
     var alpha = 0.0;
     var color = vec3f(0.72, 0.86, 1.0);
 
     if (weatherType < 1.5) {
-        let stormBoost = select(1.0, 1.35, intensity > 0.62);
-        let density = mix(34.0, 68.0, intensity) * densityScale * stormBoost;
-        let cell = vec2f(10.0, 32.0);
-        let grid = floor((pixel + vec2f(uniforms.time * uniforms.wind * 36.0, uniforms.time * 760.0)) / cell);
-        let local = fract((pixel + vec2f(uniforms.time * uniforms.wind * 36.0, uniforms.time * 760.0)) / cell);
+        let stormBoost = select(1.0, 1.18, intensity > 0.62);
+        let density = mix(18.0, 38.0, intensity) * densityScale * stormBoost;
+        let cell = vec2f(18.0, 58.0);
+        let rainOffset = vec2f(uniforms.time * uniforms.wind * 22.0, uniforms.time * 560.0);
+        let grid = floor((pixel + rainOffset) / cell);
+        let local = fract((pixel + rainOffset) / cell);
         let seed = hash21(grid);
-        let streak = (1.0 - smoothstep(0.02, 0.18, abs(local.x - seed))) * (1.0 - smoothstep(0.26, 0.92, local.y));
-        alpha = streak * step(seed, density / 100.0) * (0.13 + intensity * 0.18);
+        let xTarget = 0.2 + seed * 0.6;
+        let streak = (1.0 - smoothstep(0.025, 0.11, abs(local.x - xTarget))) * smoothstep(0.02, 0.18, local.y) * (1.0 - smoothstep(0.42, 0.98, local.y));
+        alpha = streak * step(seed, density / 100.0) * (0.045 + intensity * 0.075);
         color = vec3f(0.58, 0.76, 1.0);
     } else {
-        let cell = mix(18.0, 12.0, intensity) / max(0.55, densityScale);
+        let cell = mix(26.0, 18.0, intensity) / max(0.55, densityScale);
         let drift = vec2f(uniforms.time * (uniforms.wind * 10.0 + 16.0), uniforms.time * 34.0);
         let grid = floor((pixel + drift) / cell);
         let local = fract((pixel + drift) / cell) - vec2f(0.5, 0.5);
         let seed = hash21(grid);
         let flake = smoothstep(0.24, 0.02, length(local + vec2f(seed * 0.18 - 0.09, seed * 0.12 - 0.06)));
-        alpha = flake * step(seed, 0.42 + intensity * 0.32) * (0.16 + intensity * 0.16);
+        alpha = flake * step(seed, 0.28 + intensity * 0.22) * (0.055 + intensity * 0.08);
         color = vec3f(0.94, 0.98, 1.0);
     }
 
