@@ -44,6 +44,9 @@ let radialWriteIndex = 0;
 let spawnCount = 0;
 let scheduledImpactId = 0;
 let activeRadialCount = 0;
+let particleDirtyStart = -1;
+let particleDirtyEnd = -1;
+let particleDirtyWrapped = false;
 let patriotState;
 
 const maxParticles = 6000;
@@ -568,6 +571,7 @@ function frame(now) {
     const radialCount = updateRadialAges(now);
     copySourceCanvasIfNeeded(radialCount);
     updateUniforms(dt, now);
+    flushParticleWrites();
 
     const encoder = device.createCommandEncoder();
     const computePass = encoder.beginComputePass();
@@ -1465,8 +1469,52 @@ function spawnParticle(x, y, vx, vy, r, g, b, a, size, lifetime, kind) {
     particleData[offset + 10] = Math.max(1, size);
     particleData[offset + 11] = kind;
     expirations[index] = performance.now() + (lifetime * 1000);
-    device.queue.writeBuffer(particleBuffer, index * particleStride, particleData, offset, particleFloats);
+    markParticleDirty(index);
     spawnCount++;
+}
+
+function markParticleDirty(index) {
+    if (particleDirtyStart < 0) {
+        particleDirtyStart = index;
+        particleDirtyEnd = index;
+        particleDirtyWrapped = false;
+        return;
+    }
+
+    if (particleDirtyWrapped) {
+        particleDirtyEnd = Math.max(particleDirtyEnd, index);
+        return;
+    }
+
+    if (index >= particleDirtyStart) {
+        particleDirtyEnd = Math.max(particleDirtyEnd, index);
+    } else {
+        particleDirtyWrapped = true;
+        particleDirtyEnd = index;
+    }
+}
+
+function flushParticleWrites() {
+    if (!particleBuffer || particleDirtyStart < 0) return;
+
+    if (particleDirtyWrapped) {
+        const tailCount = maxParticles - particleDirtyStart;
+        if (tailCount > 0) {
+            device.queue.writeBuffer(particleBuffer, particleDirtyStart * particleStride, particleData, particleDirtyStart * particleFloats, tailCount * particleFloats);
+        }
+
+        const headCount = particleDirtyEnd + 1;
+        if (headCount > 0) {
+            device.queue.writeBuffer(particleBuffer, 0, particleData, 0, headCount * particleFloats);
+        }
+    } else {
+        const count = particleDirtyEnd - particleDirtyStart + 1;
+        device.queue.writeBuffer(particleBuffer, particleDirtyStart * particleStride, particleData, particleDirtyStart * particleFloats, count * particleFloats);
+    }
+
+    particleDirtyStart = -1;
+    particleDirtyEnd = -1;
+    particleDirtyWrapped = false;
 }
 
 function spawnRadialEffect(x, y, radius, duration, type, intensity, color, options = {}) {
@@ -1602,6 +1650,9 @@ function clearCpuState() {
     radialWriteIndex = persistentRadialSlots;
     spawnCount = 0;
     activeRadialCount = 0;
+    particleDirtyStart = -1;
+    particleDirtyEnd = -1;
+    particleDirtyWrapped = false;
     if (device && particleBuffer) {
         device.queue.writeBuffer(particleBuffer, 0, particleData);
     }
@@ -2012,7 +2063,6 @@ fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
     let age = input.effect.w;
     let progress = clamp(age / max(duration, 0.001), 0.0, 1.0);
     let d = length(input.local);
-    let n = noise(input.local * 3.2 + vec2f(seed * 0.17 + uniforms.time * 0.34 + input.extra.x * 0.01, seed * 0.11 - uniforms.time * 0.21));
     var alpha = 0.0;
     var color = input.color.rgb;
     var uvOffset = vec2f(0.0, 0.0);
@@ -2023,6 +2073,7 @@ fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
     }
 
     if (inKind(kind, 0.0)) {
+        let n = noise(input.local * 3.2 + vec2f(seed * 0.17 + uniforms.time * 0.34 + input.extra.x * 0.01, seed * 0.11 - uniforms.time * 0.21));
         let ring = 1.0 - smoothstep(0.026, 0.145, abs(d - 0.82));
         let ripple = 0.72 + 0.28 * n;
         alpha = input.color.a * intensity * ring * ripple * (1.0 - progress * 0.72);
@@ -2045,12 +2096,14 @@ fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
         alpha = input.color.a * intensity * clamp(outer + inner * 0.62 + horizontal * 0.52 + vertical * 0.52 + sweep * 0.5, 0.0, 1.15);
         color = mix(vec3f(0.46, 0.84, 1.0), vec3f(1.0, 0.98, 0.78), outer * 0.35 + sweep * 0.3);
     } else if (inKind(kind, 2.0)) {
+        let n = noise(input.local * 3.2 + vec2f(seed * 0.17 + uniforms.time * 0.34 + input.extra.x * 0.01, seed * 0.11 - uniforms.time * 0.21));
         let body = smoothstep(1.02, 0.16, d);
         let boundary = 1.0 - smoothstep(0.025, 0.12, abs(d - (0.78 + sin(uniforms.time * 1.7 + seed) * 0.025)));
         let pulse = 0.72 + 0.28 * sin(uniforms.time * 2.4 + seed);
         alpha = input.color.a * intensity * (body * 0.36 + boundary * 0.72) * (0.72 + n * 0.28) * pulse;
         color = mix(vec3f(0.36, 1.0, 0.25), vec3f(0.88, 1.0, 0.34), n * 0.55 + boundary * 0.24);
     } else if (inKind(kind, 3.0) || inKind(kind, 5.0)) {
+        let n = noise(input.local * 3.2 + vec2f(seed * 0.17 + uniforms.time * 0.34 + input.extra.x * 0.01, seed * 0.11 - uniforms.time * 0.21));
         let body = smoothstep(1.04, 0.08, d);
         let waves = 0.5 + 0.5 * sin((input.local.x + input.local.y) * 9.0 + uniforms.time * 8.0 + seed);
         alpha = input.color.a * intensity * body * (0.28 + 0.72 * n) * (0.55 + waves * 0.18);
@@ -2058,6 +2111,7 @@ fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
         sourceMix = 0.46;
         color = mix(color, vec3f(1.0, 0.54, 0.12), 0.34 + n * 0.24);
     } else if (inKind(kind, 4.0)) {
+        let n = noise(input.local * 3.2 + vec2f(seed * 0.17 + uniforms.time * 0.34 + input.extra.x * 0.01, seed * 0.11 - uniforms.time * 0.21));
         let ring = 1.0 - smoothstep(0.08, 0.28, abs(d - 0.78));
         let body = smoothstep(1.0, 0.2, d) * (1.0 - progress * 0.35);
         alpha = input.color.a * intensity * (body * 0.24 + ring * 0.62) * (0.72 + n * 0.28) * (1.0 - progress * 0.55);
