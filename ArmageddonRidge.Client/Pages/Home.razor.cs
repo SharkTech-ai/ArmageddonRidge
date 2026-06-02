@@ -248,12 +248,15 @@ public partial class Home
             if (_state.Phase == GamePhase.Battle && _state.CurrentTurn == TurnOwner.Cpu)
             {
                 await Task.Delay(_reducedMotion ? 250 : 700);
+                await RenderSceneCoreAsync(force: true);
+                await Task.Delay(1);
+                var cpuPlan = await Engine.PlanCurrentCpuTurnAsync(_state, _settings);
                 playerHealthBefore = _state.PlayerTank.Health;
                 cpuHealthBefore = _state.CpuTank.Health;
                 playerShieldBefore = _state.PlayerTank.Shield;
                 cpuShieldBefore = _state.CpuTank.Shield;
                 var cpuPreShotScene = BuildScene();
-                var cpuShot = Engine.FireCurrentTurn(_state, _settings);
+                var cpuShot = Engine.FirePlannedCpuTurn(_state, _settings, cpuPlan);
                 HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
                 await PlayResolutionAsync(
                     cpuPreShotScene,
