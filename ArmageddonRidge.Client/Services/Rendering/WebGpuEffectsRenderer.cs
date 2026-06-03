@@ -142,16 +142,20 @@ public sealed class WebGpuEffectsRenderer(IJSRuntime js) : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null)
+        if (_module is null) return;
+
+        try
         {
-            try
-            {
-                await _module.InvokeVoidAsync("dispose");
-                await _module.DisposeAsync();
-            }
-            catch (JSException)
-            {
-            }
+            await _module.InvokeVoidAsync("dispose");
+            await _module.DisposeAsync();
+        }
+        catch (JSException)
+        {
+        }
+        finally
+        {
+            _module = null;
+            _lastEffectsTerrainRevision = int.MinValue;
         }
     }
 

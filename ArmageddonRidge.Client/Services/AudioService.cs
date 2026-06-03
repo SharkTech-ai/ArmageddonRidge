@@ -48,6 +48,9 @@ public sealed class AudioService(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null) await _module.DisposeAsync();
+        if (_module is null) return;
+
+        await _module.DisposeAsync();
+        _module = null;
     }
 }

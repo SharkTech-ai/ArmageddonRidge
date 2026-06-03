@@ -53,6 +53,7 @@ public sealed class CanvasRenderer(HybridCanvasRenderer hybrid, WasmCanvasRender
     {
         await hybrid.DisposeAsync();
         await fullWasm.DisposeAsync();
+        _active = null;
     }
 
     private async ValueTask<IGameRenderer> EnsureActiveAsync()
