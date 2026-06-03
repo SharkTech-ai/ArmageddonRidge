@@ -22,8 +22,10 @@ public sealed class WasmRenderCommandBuilder
         AddTank(commands, scene.Player, "#50c5b7", "#d7f7ff");
         AddTank(commands, scene.Cpu, "#ec6a5c", "#ffd6d0");
 
-        if (trail is { Count: > 1 }) AddTrail(commands, trail, progress);
-        if (explosions is { Count: > 0 }) AddExplosions(commands, explosions, progress);
+        var visibleTrailCount = trail is { Count: > 1 }
+            ? AddTrail(commands, trail, progress)
+            : 0;
+        if (explosions is { Count: > 0 }) AddExplosions(commands, explosions, progress, visibleTrailCount, trail?.Count ?? 0);
 
         AddWind(commands, scene);
         return new RenderFrame(scene.World, commands);
@@ -175,7 +177,7 @@ public sealed class WasmRenderCommandBuilder
         }
     }
 
-    private static void AddTrail(List<RenderCommand> commands, IReadOnlyList<RenderPoint> trail, float progress)
+    private static int AddTrail(List<RenderCommand> commands, IReadOnlyList<RenderPoint> trail, float progress)
     {
         var count = Math.Clamp((int)MathF.Ceiling(trail.Count * progress), 2, trail.Count);
         var visible = new RenderPoint[count];
@@ -184,13 +186,23 @@ public sealed class WasmRenderCommandBuilder
 
         var head = visible[^1];
         commands.Add(new RenderCommand { Op = "circle", X = head.X, Y = head.Y, R = 6, Fill = "#fff8d9", Stroke = "#f2c14e", LineWidth = 2 });
+        return count;
     }
 
-    private static void AddExplosions(List<RenderCommand> commands, IReadOnlyList<WasmExplosion> explosions, float progress)
+    private static void AddExplosions(List<RenderCommand> commands, IReadOnlyList<WasmExplosion> explosions, float progress, int visibleTrailCount, int trailCount)
     {
         for (var i = 0; i < explosions.Count; i++)
         {
             var explosion = explosions[i];
+            if (trailCount > 0)
+            {
+                var triggerIndex = explosion.TriggerIndex >= 0
+                    ? explosion.TriggerIndex
+                    : trailCount - 1;
+                if (visibleTrailCount <= triggerIndex)
+                    continue;
+            }
+
             var kind = explosion.VisualKind ?? string.Empty;
             var normalizedKind = kind.ToLowerInvariant();
             var radius = MathF.Max(8, explosion.Radius * MathF.Sin(progress * MathF.PI * 0.5f));

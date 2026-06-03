@@ -47,6 +47,88 @@ public sealed class WasmRenderCommandBuilderTests
             && command.Stroke?.Contains("236,106,92", StringComparison.Ordinal) == true);
     }
 
+    [Fact]
+    public void FullWasmFallbackHidesTriggeredExplosionUntilTrailReachesTriggerIndex()
+    {
+        var builder = new WasmRenderCommandBuilder();
+        var trail = new[]
+        {
+            new RenderPoint(10, 10),
+            new RenderPoint(20, 20),
+            new RenderPoint(30, 30),
+            new RenderPoint(40, 40),
+            new RenderPoint(50, 50)
+        };
+
+        var frame = builder.BuildFrame(
+            EmptyScene(),
+            trail,
+            [new WasmExplosion(40, 40, 42, 35, false, false, "PenetratorPrimary", 3)],
+            progress: 0.5f);
+
+        Assert.DoesNotContain(frame.Commands, command =>
+            command.X == 40
+            && command.Y == 40
+            && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
+
+        var laterFrame = builder.BuildFrame(
+            EmptyScene(),
+            trail,
+            [new WasmExplosion(40, 40, 42, 35, false, false, "PenetratorPrimary", 3)],
+            progress: 0.8f);
+
+        Assert.Contains(laterFrame.Commands, command =>
+            command.X == 40
+            && command.Y == 40
+            && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void FullWasmFallbackHidesFinalExplosionUntilTrailCompletes()
+    {
+        var builder = new WasmRenderCommandBuilder();
+        var trail = new[]
+        {
+            new RenderPoint(10, 10),
+            new RenderPoint(20, 20),
+            new RenderPoint(30, 30),
+            new RenderPoint(40, 40),
+            new RenderPoint(50, 50)
+        };
+
+        var earlyFrame = builder.BuildFrame(
+            EmptyScene(),
+            trail,
+            [
+                new WasmExplosion(40, 40, 42, 35, false, false, "PenetratorPrimary", 3),
+                new WasmExplosion(80, 80, 58, 80, false, false, "PenetratorSecondary", -1)
+            ],
+            progress: 0.5f);
+
+        Assert.DoesNotContain(earlyFrame.Commands, command =>
+            command.X == 40
+            && command.Y == 40
+            && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(earlyFrame.Commands, command =>
+            command.X == 80
+            && command.Y == 80
+            && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
+
+        var finalFrame = builder.BuildFrame(
+            EmptyScene(),
+            trail,
+            [
+                new WasmExplosion(40, 40, 42, 35, false, false, "PenetratorPrimary", 3),
+                new WasmExplosion(80, 80, 58, 80, false, false, "PenetratorSecondary", -1)
+            ],
+            progress: 1f);
+
+        Assert.Contains(finalFrame.Commands, command =>
+            command.X == 80
+            && command.Y == 80
+            && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
+    }
+
     private static RenderScene EmptyScene()
     {
         var terrain = Enumerable.Repeat(620f, GameConstants.WorldWidth).ToArray();
