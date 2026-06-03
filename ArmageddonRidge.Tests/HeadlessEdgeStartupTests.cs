@@ -61,6 +61,9 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.BattlefieldRendered, "The battlefield canvas did not render after starting a duel.");
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
+        Assert.True(result.ShopPurchaseSucceeded, "The shop did not allow buying a Heavy Shell before battle.");
+        Assert.True(result.PurchasedWeaponSelectable, "The purchased Heavy Shell was not available in the battle weapon selector.");
+        Assert.True(result.PurchasedWeaponSelectionShowsInventory, "Selecting the purchased Heavy Shell did not show its inventory count.");
         Assert.True(result.CombatEventOverlayRendered, "The battle combat event overlay did not render the latest event.");
         Assert.True(
             result.CombatEventOverlayAvoidsControls,
@@ -369,6 +372,22 @@ public sealed class HeadlessEdgeStartupTests
                     """);
                 if (shopStartVisible)
                 {
+                    var clickedHeavyShellBuy = await client.EvaluateBooleanAsync("""
+                        (() => {
+                            const item = Array.from(document.querySelectorAll('.shop-item'))
+                                .find(candidate => candidate.querySelector('strong')?.textContent?.trim() === 'Heavy Shell');
+                            const button = item?.querySelector('button');
+                            if (!button || button.disabled) return false;
+                            button.click();
+                            return true;
+                        })()
+                        """);
+                    if (!clickedHeavyShellBuy)
+                    {
+                        throw new InvalidOperationException("Could not buy Heavy Shell during browser smoke shop setup.");
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(350));
                     await client.ClickButtonByTextAsync("Start battle");
                     await Task.Delay(TimeSpan.FromSeconds(1));
                 }
@@ -377,6 +396,22 @@ public sealed class HeadlessEdgeStartupTests
             var battlefieldRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield'))");
             var effectsCanvasRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield-effects'))");
             var battleConsoleRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battle-console'))");
+            var shopPurchaseSucceeded = await client.EvaluateBooleanAsync("""
+                Array.from(document.querySelectorAll('.battle-console select option'))
+                    .some(option => option.value === 'heavy-shell' && option.textContent?.includes('(1)'))
+                """);
+            var purchasedWeaponSelectable = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const select = document.querySelector('.battle-console select');
+                    if (!select || !Array.from(select.options).some(option => option.value === 'heavy-shell')) return false;
+                    select.value = 'heavy-shell';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return select.value === 'heavy-shell';
+                })()
+                """);
+            var purchasedWeaponSelectionShowsInventory = await client.WaitForBooleanAsync("""
+                document.querySelector('.console-weapon strong')?.textContent?.trim() === '1'
+                """, TimeSpan.FromSeconds(5));
             var combatEventOverlayRendered = await client.EvaluateBooleanAsync("""
                 (() => {
                     const overlay = document.querySelector('.taunt');
@@ -528,6 +563,9 @@ public sealed class HeadlessEdgeStartupTests
                 battlefieldRendered,
                 effectsCanvasRendered,
                 battleConsoleRendered,
+                shopPurchaseSucceeded,
+                purchasedWeaponSelectable,
+                purchasedWeaponSelectionShowsInventory,
                 combatEventOverlayRendered,
                 combatEventOverlayAvoidsControls,
                 combatEventOverlayLayoutDiagnostics,
@@ -666,6 +704,9 @@ public sealed class HeadlessEdgeStartupTests
         bool BattlefieldRendered,
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
+        bool ShopPurchaseSucceeded,
+        bool PurchasedWeaponSelectable,
+        bool PurchasedWeaponSelectionShowsInventory,
         bool CombatEventOverlayRendered,
         bool CombatEventOverlayAvoidsControls,
         string CombatEventOverlayLayoutDiagnostics,
