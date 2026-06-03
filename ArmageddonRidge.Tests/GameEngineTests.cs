@@ -10,6 +10,26 @@ namespace ArmageddonRidge.Tests;
 
 public sealed class GameEngineTests
 {
+    public static TheoryData<string, ShotVisualKind, int> WeaponSmokeCases => new()
+    {
+        { WeaponIds.PeaShell, ShotVisualKind.Ballistic, 1 },
+        { WeaponIds.HeavyShell, ShotVisualKind.Ballistic, 1 },
+        { WeaponIds.BabyMissile, ShotVisualKind.Ballistic, 1 },
+        { WeaponIds.ClusterPopper, ShotVisualKind.Ballistic, 5 },
+        { WeaponIds.SplitterMirv, ShotVisualKind.Ballistic, 7 },
+        { WeaponIds.NapalmFlask, ShotVisualKind.Fire, 1 },
+        { WeaponIds.DirtDrop, ShotVisualKind.Dirt, 1 },
+        { WeaponIds.Excavator, ShotVisualKind.Dirt, 1 },
+        { WeaponIds.BunkerBuster, ShotVisualKind.Ballistic, 1 },
+        { WeaponIds.LaserLance, ShotVisualKind.Laser, 1 },
+        { WeaponIds.TeleportShot, ShotVisualKind.Teleport, 0 },
+        { WeaponIds.DarkEagle, ShotVisualKind.Missile, 1 },
+        { WeaponIds.ShahedDroneSwarm, ShotVisualKind.DroneSwarm, 3 },
+        { WeaponIds.Gbu57Mop, ShotVisualKind.PenetratorSecondary, 2 },
+        { WeaponIds.TacticalNuke, ShotVisualKind.Nuclear, 1 },
+        { WeaponIds.DoomsdayNuke, ShotVisualKind.Nuclear, 1 }
+    };
+
     [Fact]
     public void NewMatchSpawnsTanksOnTerrain()
     {
@@ -55,6 +75,36 @@ public sealed class GameEngineTests
         Assert.True(bought);
         Assert.True(state.PlayerTank.Cash < before);
         Assert.Equal(1, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
+    }
+
+    [Theory]
+    [MemberData(nameof(WeaponSmokeCases))]
+    public void EveryCatalogWeaponCanBeSelectedFiredLoggedAndRendered(string weaponId, ShotVisualKind expectedVisualKind, int minimumExplosions)
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableNuclearWeapons: true);
+        var state = engine.NewMatch(settings);
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        state.Terrain.CopyFrom(new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights));
+        state.PlayerTank.Position = new Vector2(160, 620);
+        state.CpuTank.Position = new Vector2(420, 620);
+        state.Wind = 0;
+        if (weaponId != WeaponIds.PeaShell)
+            state.PlayerTank.AddWeapon(weaponId, 1);
+        state.SelectedWeaponId = weaponId;
+        engine.StartBattle(state);
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 24, power: 78);
+
+        Assert.Equal(weaponId, result.WeaponId);
+        Assert.Equal("player", result.OwnerTankId);
+        Assert.Equal(expectedVisualKind, result.VisualKind);
+        Assert.NotEmpty(result.Trail);
+        Assert.Contains(result.Events, entry => entry.Contains($"fired {engine.Weapons.Get(weaponId).DisplayName}", StringComparison.Ordinal));
+        Assert.Contains(state.EventLog, entry => entry.Contains($"fired {engine.Weapons.Get(weaponId).DisplayName}", StringComparison.Ordinal));
+        Assert.True(result.Explosions.Count >= minimumExplosions);
+        if (weaponId != WeaponIds.PeaShell)
+            Assert.Equal(0, state.PlayerTank.GetInventoryCount(weaponId));
     }
 
     [Fact]

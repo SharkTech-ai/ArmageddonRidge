@@ -996,7 +996,7 @@ function drawTankSprite(tank, baseFrameName) {
     }
 
     const targetHeight = tank.isCpu ? 66 : 68;
-    const targetWidth = targetHeight * (frame.w / frame.h);
+    const targetWidth = targetHeight * frame.aspect;
     const anchorX = targetWidth * 0.5;
     const footY = tank.y + 3;
     drawSpriteFacing(frameName, tank.x - anchorX, footY - targetHeight, targetWidth, targetHeight, tank.isCpu ? -1 : 1);

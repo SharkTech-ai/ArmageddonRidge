@@ -2,13 +2,14 @@ let getContext = () => undefined;
 let atlas;
 let extraSprites = {};
 let manifest;
+let frames = {};
 
 export function configureSprites(contextProvider) {
     getContext = contextProvider;
 }
 
 export function spriteFrame(name) {
-    return manifest?.frames?.[name];
+    return frames[name];
 }
 
 export function hasSprite(name) {
@@ -68,9 +69,11 @@ export function drawSpriteFacing(name, x, y, width, height, facing = 1) {
 export async function loadSprites(version) {
     try {
         manifest = await fetch(cacheBustedUrl("assets/sprites/atlas.json", version), { cache: "no-cache" }).then(r => r.json());
+        frames = buildFrameCache(manifest?.frames);
         atlas = await loadImage(cacheBustedUrl(manifest.image, manifest.version ?? version));
     } catch {
         manifest = { frames: {} };
+        frames = {};
         atlas = undefined;
     }
 
@@ -92,6 +95,23 @@ function fallbackSprite(name, x, y, width, height) {
     ctx.fillRect(x + width * 0.12, y + height * 0.78, width * 0.76, height * 0.12);
 }
 
+function buildFrameCache(sourceFrames = {}) {
+    const cache = {};
+    for (const [name, frame] of Object.entries(sourceFrames)) {
+        const w = Number(frame?.w ?? 0);
+        const h = Number(frame?.h ?? 0);
+        cache[name] = {
+            x: Number(frame?.x ?? 0),
+            y: Number(frame?.y ?? 0),
+            w,
+            h,
+            aspect: h > 0 ? w / h : 1
+        };
+    }
+
+    return cache;
+}
+
 async function loadExtraSprite(name, url, version) {
     extraSprites[name] = await loadImage(cacheBustedUrl(url, version));
 }
@@ -99,6 +119,7 @@ async function loadExtraSprite(name, url, version) {
 function loadImage(url) {
     return new Promise((resolve, reject) => {
         const image = new Image();
+        image.decoding = "async";
         image.onload = () => resolve(image);
         image.onerror = reject;
         image.src = url;
