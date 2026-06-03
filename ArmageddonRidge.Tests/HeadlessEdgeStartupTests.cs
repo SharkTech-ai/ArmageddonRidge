@@ -54,6 +54,7 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
+        Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
         Assert.True(result.PerfOverlayOpened, "The FPS overlay did not open after clicking FPS.");
         Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
         Assert.True(result.BrowserResponsiveAfterPerfClose, "The browser did not respond after closing the FPS overlay.");
@@ -252,6 +253,9 @@ public sealed class HeadlessEdgeStartupTests
             var effectsCanvasRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield-effects'))");
             var battleConsoleRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battle-console'))");
             var battlefieldFpsButtonRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battlefield-fps-button'))");
+            var battlefieldFpsButtonShowsValue = await client.EvaluateBooleanAsync("""
+                /^\d+ FPS$/.test(document.querySelector('.battlefield-fps-button')?.textContent?.trim() ?? '')
+                """);
             var perfOverlayOpened = false;
             var perfOverlayClosed = false;
             var browserResponsiveAfterPerfClose = false;
@@ -272,6 +276,7 @@ public sealed class HeadlessEdgeStartupTests
                 effectsCanvasRendered,
                 battleConsoleRendered,
                 battlefieldFpsButtonRendered,
+                battlefieldFpsButtonShowsValue,
                 perfOverlayOpened,
                 perfOverlayClosed,
                 browserResponsiveAfterPerfClose,
@@ -395,6 +400,7 @@ public sealed class HeadlessEdgeStartupTests
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
         bool BattlefieldFpsButtonRendered,
+        bool BattlefieldFpsButtonShowsValue,
         bool PerfOverlayOpened,
         bool PerfOverlayClosed,
         bool BrowserResponsiveAfterPerfClose,

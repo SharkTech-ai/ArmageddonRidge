@@ -122,6 +122,8 @@ public partial class Home
         ? "0"
         : $"{(_state.Wind > 0 ? "->" : _state.Wind < 0 ? "<-" : "--")} {Math.Abs(_state.Wind)}";
 
+    private string FpsButtonText => $"{Math.Max(0, _fps)} FPS";
+
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
     private string SimdStatusLabel => _renderMode == RenderMode.Hybrid

@@ -615,6 +615,7 @@ select {
     top: 94px;
     right: 14px;
     z-index: 5;
+    min-width: 58px;
     min-height: 28px;
     padding: 0 9px;
     border-color: rgba(126, 226, 213, 0.26);
@@ -623,6 +624,7 @@ select {
     color: #d7f7ff;
     font-size: 0.68rem;
     font-weight: 900;
+    font-variant-numeric: tabular-nums;
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
     backdrop-filter: blur(6px);
 }

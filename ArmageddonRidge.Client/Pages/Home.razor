@@ -50,7 +50,7 @@
                 <canvas @ref="_effectsCanvas" class="battlefield-effects" width="1200" height="700" aria-hidden="true"></canvas>
                 @if (VisiblePhase == GamePhase.Battle)
                 {
-                    <button class="battlefield-fps-button" title="Toggle performance overlay" @onclick="TogglePerf">FPS</button>
+                    <button class="battlefield-fps-button" title="Toggle performance overlay" @onclick="TogglePerf">@FpsButtonText</button>
                 }
                 <div class="@BattleHudCss" aria-label="Battle health">
                     <div class="@PlayerVersusHealthCss">
