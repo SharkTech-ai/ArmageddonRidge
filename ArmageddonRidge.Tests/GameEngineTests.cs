@@ -108,6 +108,41 @@ public sealed class GameEngineTests
             Assert.Equal(0, state.PlayerTank.GetInventoryCount(weaponId));
     }
 
+    [Theory]
+    [MemberData(nameof(WeaponSmokeCases))]
+    public void EveryCatalogWeaponCanBeFiredByPlannedCpuTurn(string weaponId, ShotVisualKind expectedVisualKind, int minimumExplosions)
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableNuclearWeapons: true);
+        var state = engine.NewMatch(settings);
+        var heights = Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray();
+        state.Terrain.CopyFrom(new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights));
+        state.PlayerTank.Position = new Vector2(160, 620);
+        state.CpuTank.Position = new Vector2(420, 620);
+        state.PlayerTank.MaxHealth = 500;
+        state.PlayerTank.Health = 500;
+        state.CpuTank.MaxHealth = 500;
+        state.CpuTank.Health = 500;
+        state.Wind = 0;
+        if (weaponId != WeaponIds.PeaShell)
+            state.CpuTank.AddWeapon(weaponId, 1);
+        engine.StartBattle(state);
+        state.CurrentTurn = TurnOwner.Cpu;
+        var plan = new CpuShotPlan(weaponId, 156, 78, "", 0, 0);
+
+        var result = engine.FirePlannedCpuTurn(state, settings, plan);
+
+        Assert.Equal(weaponId, result.WeaponId);
+        Assert.Equal("cpu", result.OwnerTankId);
+        Assert.Equal(expectedVisualKind, result.VisualKind);
+        Assert.NotEmpty(result.Trail);
+        Assert.Contains(result.Events, entry => entry.Contains($"fired {engine.Weapons.Get(weaponId).DisplayName}", StringComparison.Ordinal));
+        Assert.Contains(state.EventLog, entry => entry.Contains($"fired {engine.Weapons.Get(weaponId).DisplayName}", StringComparison.Ordinal));
+        Assert.True(result.Explosions.Count >= minimumExplosions);
+        if (weaponId != WeaponIds.PeaShell)
+            Assert.Equal(0, state.CpuTank.GetInventoryCount(weaponId));
+    }
+
     [Fact]
     public void CpuPlannerReturnsOwnedOrFreeWeapon()
     {
