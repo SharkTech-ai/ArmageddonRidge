@@ -1030,6 +1030,11 @@ pre {
         gap: 6px;
     }
 
+    .battle-layout.is-battle .battlefield-panel {
+        margin-bottom: clamp(128px, 36vw, 160px);
+        overflow: visible;
+    }
+
     .versus-health {
         padding: 6px;
     }
@@ -1047,6 +1052,8 @@ pre {
         grid-template-columns: 1fr 1fr auto;
         align-items: center;
         width: calc(100% - 16px);
+        top: calc(100% + 8px);
+        bottom: auto;
         padding: 8px 9px 8px 13px;
     }
 

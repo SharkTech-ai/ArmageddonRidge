@@ -13,7 +13,7 @@ namespace ArmageddonRidge.Tests;
 public sealed class HeadlessEdgeStartupTests
 {
     private static readonly TimeSpan ServerStartupTimeout = TimeSpan.FromSeconds(90);
-    private static readonly TimeSpan BrowserStartupTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan BrowserStartupTimeout = TimeSpan.FromSeconds(25);
     private readonly ITestOutputHelper _output;
 
     public HeadlessEdgeStartupTests(ITestOutputHelper output)
@@ -48,6 +48,9 @@ public sealed class HeadlessEdgeStartupTests
 
         var fullWasmBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.FullWasmRenderer);
         AssertCleanBoot(fullWasmBoot);
+
+        var mobileBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.MobileLayout);
+        AssertCleanBoot(mobileBoot);
     }
 
     private static void AssertCleanBoot(BrowserSmokeResult result)
@@ -58,6 +61,9 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
+        Assert.True(result.BattleHudAndFpsStayInsideBattlefield, "The HUD or FPS button escaped the battlefield panel bounds.");
+        Assert.True(result.BattleControlsStayInViewport, "Battle controls rendered outside the viewport.");
+        Assert.True(result.BattleConsoleAvoidsExpectedCanvasOverlap, "The battle console overlapped the battlefield canvas in a layout where it should sit below it.");
         if (!result.ExpectedFullWasmRenderer)
         {
             Assert.True(result.BattlefieldCanvasChangedAfterAmbientTick, "The battlefield canvas did not update while idle; clouds and weather may be frozen.");
@@ -236,9 +242,13 @@ public sealed class HeadlessEdgeStartupTests
             var target = await WaitForDevToolsTargetAsync(cdpPort, process);
             await using var client = await CdpClient.ConnectAsync(target.WebSocketDebuggerUrl);
             await client.EnableAsync();
+            if (options.ViewportWidth is not null && options.ViewportHeight is not null)
+            {
+                await client.SetViewportAsync(options.ViewportWidth.Value, options.ViewportHeight.Value, mobile: true);
+            }
+
             await client.NavigateAsync(appUrl);
-            await Task.Delay(BrowserStartupTimeout);
-            var gameRootRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.game-root'))");
+            var gameRootRendered = await client.WaitForBooleanAsync("Boolean(document.querySelector('.game-root'))", BrowserStartupTimeout);
             if (gameRootRendered)
             {
                 await client.EvaluateBooleanAsync("""
@@ -329,6 +339,44 @@ public sealed class HeadlessEdgeStartupTests
             var battlefieldFpsButtonShowsValue = await client.EvaluateBooleanAsync("""
                 /^\d+ FPS$/.test(document.querySelector('.battlefield-fps-button')?.textContent?.trim() ?? '')
                 """);
+            var battleHudAndFpsStayInsideBattlefield = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const rect = selector => {
+                        const element = document.querySelector(selector);
+                        if (!element) return null;
+                        return element.getBoundingClientRect();
+                    };
+                    const panel = rect('.battlefield-panel');
+                    const hud = rect('.battle-hud');
+                    const fps = rect('.battlefield-fps-button');
+                    const inside = (outer, inner) => outer && inner
+                        && inner.left >= outer.left
+                        && inner.right <= outer.right
+                        && inner.top >= outer.top
+                        && inner.bottom <= outer.bottom;
+                    return inside(panel, hud) && inside(panel, fps);
+                })()
+                """);
+            var battleControlsStayInViewport = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const controls = ['.battle-hud', '.battlefield-fps-button', '.battle-console']
+                        .map(selector => document.querySelector(selector)?.getBoundingClientRect());
+                    return controls.every(rect => rect
+                        && rect.width > 0
+                        && rect.height > 0
+                        && rect.left >= 0
+                        && rect.top >= 0
+                        && rect.right <= window.innerWidth
+                        && rect.bottom <= window.innerHeight);
+                })()
+                """);
+            var battleConsoleAvoidsExpectedCanvasOverlap = !options.ExpectConsoleBelowBattlefield || await client.EvaluateBooleanAsync("""
+                (() => {
+                    const canvas = document.querySelector('canvas.battlefield')?.getBoundingClientRect();
+                    const console = document.querySelector('.battle-console')?.getBoundingClientRect();
+                    return Boolean(canvas && console && console.top >= canvas.bottom + 4);
+                })()
+                """);
             var firstBattlefieldFrame = await client.EvaluateStringAsync("document.querySelector('canvas.battlefield')?.toDataURL('image/png') ?? ''");
             await Task.Delay(TimeSpan.FromMilliseconds(1200));
             var secondBattlefieldFrame = await client.EvaluateStringAsync("document.querySelector('canvas.battlefield')?.toDataURL('image/png') ?? ''");
@@ -385,6 +433,9 @@ public sealed class HeadlessEdgeStartupTests
                 battleConsoleRendered,
                 battlefieldFpsButtonRendered,
                 battlefieldFpsButtonShowsValue,
+                battleHudAndFpsStayInsideBattlefield,
+                battleControlsStayInViewport,
+                battleConsoleAvoidsExpectedCanvasOverlap,
                 battlefieldCanvasChangedAfterAmbientTick,
                 perfOverlayOpened,
                 perfOverlayShowsWebGpuEffectsOff,
@@ -516,6 +567,9 @@ public sealed class HeadlessEdgeStartupTests
         bool BattleConsoleRendered,
         bool BattlefieldFpsButtonRendered,
         bool BattlefieldFpsButtonShowsValue,
+        bool BattleHudAndFpsStayInsideBattlefield,
+        bool BattleControlsStayInViewport,
+        bool BattleConsoleAvoidsExpectedCanvasOverlap,
         bool BattlefieldCanvasChangedAfterAmbientTick,
         bool PerfOverlayOpened,
         bool PerfOverlayShowsWebGpuEffectsOff,
@@ -531,13 +585,20 @@ public sealed class HeadlessEdgeStartupTests
         string[] NetworkFailures,
         string[] FailedResponses);
 
-    private sealed record BrowserSmokeOptions(bool DisableWebGpuEffects, bool UseFullWasmRenderer)
+    private sealed record BrowserSmokeOptions(
+        bool DisableWebGpuEffects,
+        bool UseFullWasmRenderer,
+        int? ViewportWidth = null,
+        int? ViewportHeight = null,
+        bool ExpectConsoleBelowBattlefield = false)
     {
         public static BrowserSmokeOptions Default { get; } = new(false, false);
 
         public static BrowserSmokeOptions WebGpuEffectsDisabled { get; } = new(true, false);
 
         public static BrowserSmokeOptions FullWasmRenderer { get; } = new(false, true);
+
+        public static BrowserSmokeOptions MobileLayout { get; } = new(false, false, 390, 740, true);
     }
 
     private sealed record DevToolsTarget(string Type, string WebSocketDebuggerUrl);
@@ -600,6 +661,15 @@ public sealed class HeadlessEdgeStartupTests
             await SendAsync("Page.enable");
             await SendAsync("Log.enable");
         }
+
+        public Task SetViewportAsync(int width, int height, bool mobile) =>
+            SendAsync("Emulation.setDeviceMetricsOverride", new Dictionary<string, object?>
+            {
+                ["width"] = width,
+                ["height"] = height,
+                ["deviceScaleFactor"] = 1,
+                ["mobile"] = mobile
+            });
 
         public Task NavigateAsync(string url)
         {
