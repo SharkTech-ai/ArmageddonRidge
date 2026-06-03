@@ -61,6 +61,7 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.BattlefieldRendered, "The battlefield canvas did not render after starting a duel.");
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
+        Assert.True(result.CombatEventOverlayRendered, "The battle combat event overlay did not render the latest event.");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
         Assert.True(result.BattleHudAndFpsStayInsideBattlefield, "The HUD or FPS button escaped the battlefield panel bounds.");
@@ -373,6 +374,19 @@ public sealed class HeadlessEdgeStartupTests
             var battlefieldRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield'))");
             var effectsCanvasRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield-effects'))");
             var battleConsoleRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battle-console'))");
+            var combatEventOverlayRendered = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const overlay = document.querySelector('.taunt');
+                    const text = overlay?.textContent?.trim() ?? '';
+                    const rect = overlay?.getBoundingClientRect();
+                    return Boolean(
+                        overlay
+                        && rect
+                        && rect.width > 0
+                        && rect.height > 0
+                        && text.startsWith('Round '));
+                })()
+                """);
             var battlefieldFpsButtonRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battlefield-fps-button'))");
             var battlefieldFpsButtonShowsValue = await client.EvaluateBooleanAsync("""
                 /^\d+ FPS$/.test(document.querySelector('.battlefield-fps-button')?.textContent?.trim() ?? '')
@@ -469,6 +483,7 @@ public sealed class HeadlessEdgeStartupTests
                 battlefieldRendered,
                 effectsCanvasRendered,
                 battleConsoleRendered,
+                combatEventOverlayRendered,
                 battlefieldFpsButtonRendered,
                 battlefieldFpsButtonShowsValue,
                 battleHudAndFpsStayInsideBattlefield,
@@ -604,6 +619,7 @@ public sealed class HeadlessEdgeStartupTests
         bool BattlefieldRendered,
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
+        bool CombatEventOverlayRendered,
         bool BattlefieldFpsButtonRendered,
         bool BattlefieldFpsButtonShowsValue,
         bool BattleHudAndFpsStayInsideBattlefield,

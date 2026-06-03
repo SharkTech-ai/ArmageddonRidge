@@ -78,6 +78,17 @@ public sealed class GameEngineTests
         Assert.Equal(1, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
     }
 
+    [Fact]
+    public void StartBattleLogsRoundStartEvent()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123, EnableShop: true));
+
+        engine.StartBattle(state);
+
+        Assert.Equal("Round 1. New ridge. Same grudge.", state.EventLog.Last());
+    }
+
     [Theory]
     [MemberData(nameof(WeaponSmokeCases))]
     public void EveryCatalogWeaponCanBeSelectedFiredLoggedAndRendered(string weaponId, ShotVisualKind expectedVisualKind, int minimumExplosions)

@@ -82,6 +82,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         state.CurrentTurn = TurnOwner.Player;
         state.Wind = NextWind(state);
         ApplyStartOfTurnEffects(state);
+        state.EventLog.Add($"Round {state.RoundNumber}. New ridge. Same grudge.");
         EndRoundIfWon(state);
     }
 
