@@ -69,6 +69,11 @@ export function getStats(commandCount = 0) {
     };
 }
 
+export function dispose() {
+    canvas = undefined;
+    ctx = undefined;
+}
+
 function drawCommand(command) {
     if (!command?.op) return;
 

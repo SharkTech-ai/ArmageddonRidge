@@ -45,6 +45,9 @@ public sealed class HeadlessEdgeStartupTests
 
         var secondBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.WebGpuEffectsDisabled);
         AssertCleanBoot(secondBoot);
+
+        var fullWasmBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.FullWasmRenderer);
+        AssertCleanBoot(fullWasmBoot);
     }
 
     private static void AssertCleanBoot(BrowserSmokeResult result)
@@ -55,11 +58,20 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
-        Assert.True(result.BattlefieldCanvasChangedAfterAmbientTick, "The battlefield canvas did not update while idle; clouds and weather may be frozen.");
+        if (!result.ExpectedFullWasmRenderer)
+        {
+            Assert.True(result.BattlefieldCanvasChangedAfterAmbientTick, "The battlefield canvas did not update while idle; clouds and weather may be frozen.");
+        }
+
         Assert.True(result.PerfOverlayOpened, "The FPS overlay did not open after clicking FPS.");
         if (result.ExpectedWebGpuEffectsDisabled)
         {
             Assert.True(result.PerfOverlayShowsWebGpuEffectsOff, "The FPS overlay did not report 'FX: Off' after disabling WebGPU effects.");
+        }
+
+        if (result.ExpectedFullWasmRenderer)
+        {
+            Assert.True(result.PerfOverlayShowsFullWasmMode, "The FPS overlay did not report 'Mode: Full WASM' after switching renderers.");
         }
 
         Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
@@ -244,29 +256,55 @@ public sealed class HeadlessEdgeStartupTests
                         return true;
                     })()
                     """);
-                if (options.DisableWebGpuEffects)
+                if (options.DisableWebGpuEffects || options.UseFullWasmRenderer)
                 {
                     await client.ClickButtonByTextAsync("Settings");
                     await Task.Delay(TimeSpan.FromMilliseconds(500));
-                    var disabled = await client.EvaluateBooleanAsync("""
-                        (() => {
-                            const row = Array.from(document.querySelectorAll('.settings-row'))
-                                .find(candidate => candidate.textContent?.includes('WebGPU effects'));
-                            const checkbox = row?.querySelector('input[type="checkbox"]');
-                            if (!checkbox) return false;
-                            if (checkbox.checked) {
-                                checkbox.click();
-                            }
 
-                            return !checkbox.checked;
-                        })()
-                        """);
-                    if (!disabled)
+                    if (options.UseFullWasmRenderer)
                     {
-                        throw new InvalidOperationException("Could not disable WebGPU effects before browser smoke duel.");
+                        var switched = await client.EvaluateBooleanAsync("""
+                            (() => {
+                                const row = Array.from(document.querySelectorAll('.settings-row'))
+                                    .find(candidate => candidate.textContent?.includes('Rendering'));
+                                const select = row?.querySelector('select');
+                                if (!select) return false;
+                                select.value = 'FullWasm';
+                                select.dispatchEvent(new Event('change', { bubbles: true }));
+                                return select.value === 'FullWasm';
+                            })()
+                            """);
+                        if (!switched)
+                        {
+                            throw new InvalidOperationException("Could not switch to Full WASM rendering before browser smoke duel.");
+                        }
+
+                        await Task.Delay(TimeSpan.FromMilliseconds(500));
                     }
 
-                    await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    if (options.DisableWebGpuEffects)
+                    {
+                        var disabled = await client.EvaluateBooleanAsync("""
+                            (() => {
+                                const row = Array.from(document.querySelectorAll('.settings-row'))
+                                    .find(candidate => candidate.textContent?.includes('WebGPU effects'));
+                                const checkbox = row?.querySelector('input[type="checkbox"]');
+                                if (!checkbox) return false;
+                                if (checkbox.checked) {
+                                    checkbox.click();
+                                }
+
+                                return !checkbox.checked;
+                            })()
+                            """);
+                        if (!disabled)
+                        {
+                            throw new InvalidOperationException("Could not disable WebGPU effects before browser smoke duel.");
+                        }
+
+                        await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    }
+
                     await client.ClickSelectorAsync(".settings-head .icon-button");
                     await Task.Delay(TimeSpan.FromMilliseconds(250));
                 }
@@ -301,6 +339,7 @@ public sealed class HeadlessEdgeStartupTests
             var perfOverlayOpened = false;
             var perfOverlayClosed = false;
             var perfOverlayShowsWebGpuEffectsOff = false;
+            var perfOverlayShowsFullWasmMode = false;
             var browserResponsiveAfterPerfClose = false;
             if (battlefieldFpsButtonRendered)
             {
@@ -310,6 +349,10 @@ public sealed class HeadlessEdgeStartupTests
                 perfOverlayShowsWebGpuEffectsOff = await client.EvaluateBooleanAsync("""
                     Array.from(document.querySelectorAll('.perf-overlay span'))
                         .some(span => span.textContent?.trim() === 'FX: Off')
+                    """);
+                perfOverlayShowsFullWasmMode = await client.EvaluateBooleanAsync("""
+                    Array.from(document.querySelectorAll('.perf-overlay span'))
+                        .some(span => span.textContent?.trim() === 'Mode: Full WASM')
                     """);
                 await client.ClickSelectorAsync(".battlefield-fps-button");
                 await Task.Delay(TimeSpan.FromMilliseconds(650));
@@ -345,11 +388,13 @@ public sealed class HeadlessEdgeStartupTests
                 battlefieldCanvasChangedAfterAmbientTick,
                 perfOverlayOpened,
                 perfOverlayShowsWebGpuEffectsOff,
+                perfOverlayShowsFullWasmMode,
                 perfOverlayClosed,
                 browserResponsiveAfterPerfClose,
                 fireButtonDisabledDuringShot,
                 playerTurnRecoveredAfterCpuCycle,
                 options.DisableWebGpuEffects,
+                options.UseFullWasmRenderer,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
@@ -474,21 +519,25 @@ public sealed class HeadlessEdgeStartupTests
         bool BattlefieldCanvasChangedAfterAmbientTick,
         bool PerfOverlayOpened,
         bool PerfOverlayShowsWebGpuEffectsOff,
+        bool PerfOverlayShowsFullWasmMode,
         bool PerfOverlayClosed,
         bool BrowserResponsiveAfterPerfClose,
         bool FireButtonDisabledDuringShot,
         bool PlayerTurnRecoveredAfterCpuCycle,
         bool ExpectedWebGpuEffectsDisabled,
+        bool ExpectedFullWasmRenderer,
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
         string[] FailedResponses);
 
-    private sealed record BrowserSmokeOptions(bool DisableWebGpuEffects)
+    private sealed record BrowserSmokeOptions(bool DisableWebGpuEffects, bool UseFullWasmRenderer)
     {
-        public static BrowserSmokeOptions Default { get; } = new(false);
+        public static BrowserSmokeOptions Default { get; } = new(false, false);
 
-        public static BrowserSmokeOptions WebGpuEffectsDisabled { get; } = new(true);
+        public static BrowserSmokeOptions WebGpuEffectsDisabled { get; } = new(true, false);
+
+        public static BrowserSmokeOptions FullWasmRenderer { get; } = new(false, true);
     }
 
     private sealed record DevToolsTarget(string Type, string WebSocketDebuggerUrl);

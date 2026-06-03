@@ -194,6 +194,23 @@ export function getStats() {
     return { fps: Math.round(fps), frameMs, renderMs };
 }
 
+export function dispose() {
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+    }
+
+    canvas = undefined;
+    ctx = undefined;
+    lastScene = undefined;
+    cachedTerrain = undefined;
+    cachedTerrainTopRef = undefined;
+    cachedTerrainTopLength = -1;
+    cachedTerrainTopWorldHeight = 0;
+    cachedTerrainTop = 0;
+    shotInProgress = false;
+}
+
 function trimTrailToIntercept(points, intercept) {
     if (!points.length) {
         return [intercept];

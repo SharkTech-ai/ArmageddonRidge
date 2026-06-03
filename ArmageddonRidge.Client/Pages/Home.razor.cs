@@ -177,7 +177,7 @@ public partial class Home
                 _webGpuEffectsEnabled = save.Settings.WebGpuEffectsEnabled;
                 _renderMode = save.Settings.RenderMode;
                 _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
-                Renderer.SetMode(_renderMode);
+                await Renderer.SetModeAsync(_renderMode);
                 await Audio.SetVolumeAsync(_sfxVolume);
                 StateHasChanged();
             }
@@ -890,7 +890,7 @@ public partial class Home
         if (!Enum.TryParse<RenderMode>(args.Value?.ToString(), out var mode)) return;
 
         _renderMode = mode;
-        Renderer.SetMode(_renderMode);
+        await Renderer.SetModeAsync(_renderMode);
         _rendererReady = false;
         _lastSentTerrainRevision = -1;
         await PersistSaveAsync();
