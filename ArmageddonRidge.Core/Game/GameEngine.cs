@@ -159,7 +159,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             taunt = plan.Taunt;
         }
 
-        if (!owner.HasWeapon(weaponId))
+        if (!owner.HasWeapon(weaponId) || !WeaponIsEnabled(weaponId, settings))
             weaponId = WeaponIds.PeaShell;
 
         var weapon = Weapons.Get(weaponId);
@@ -269,6 +269,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     /// Attempts to buy and apply an upgrade for the player tank.
     /// </summary>
     public bool BuyUpgrade(GameState state, UpgradeType upgradeType) => Economy.BuyUpgrade(state.PlayerTank, upgradeType);
+
+    private bool WeaponIsEnabled(string weaponId, MatchSettings settings) =>
+        settings.EnableNuclearWeapons || Weapons.Get(weaponId).Category != WeaponCategory.Nuclear;
 
     private static bool HasPatriotInterceptor(Tank tank) =>
         tank.PatriotBatteryCharges > 0 || tank.Upgrades.Contains(UpgradeType.PatriotBattery);

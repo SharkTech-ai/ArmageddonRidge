@@ -144,6 +144,41 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void DisabledPlayerNukeFallsBackWithoutConsumingInventory()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableNuclearWeapons: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.TacticalNuke, 1);
+        state.SelectedWeaponId = WeaponIds.TacticalNuke;
+        engine.StartBattle(state);
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 42, power: 65);
+
+        Assert.Equal(WeaponIds.PeaShell, result.WeaponId);
+        Assert.Equal(ShotVisualKind.Ballistic, result.VisualKind);
+        Assert.Equal(1, state.PlayerTank.GetInventoryCount(WeaponIds.TacticalNuke));
+    }
+
+    [Fact]
+    public void DisabledPlannedCpuNukeFallsBackWithoutConsumingInventory()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableNuclearWeapons: false);
+        var state = engine.NewMatch(settings);
+        state.CpuTank.AddWeapon(WeaponIds.TacticalNuke, 1);
+        engine.StartBattle(state);
+        state.CurrentTurn = TurnOwner.Cpu;
+        var plan = new CpuShotPlan(WeaponIds.TacticalNuke, 138, 65, "", 0, 0);
+
+        var result = engine.FirePlannedCpuTurn(state, settings, plan);
+
+        Assert.Equal(WeaponIds.PeaShell, result.WeaponId);
+        Assert.Equal(ShotVisualKind.Ballistic, result.VisualKind);
+        Assert.Equal(1, state.CpuTank.GetInventoryCount(WeaponIds.TacticalNuke));
+    }
+
+    [Fact]
     public void CpuPlannerReturnsOwnedOrFreeWeapon()
     {
         var engine = CreateEngine();
