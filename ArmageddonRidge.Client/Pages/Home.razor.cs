@@ -938,8 +938,15 @@ public partial class Home
 
     public async ValueTask DisposeAsync()
     {
+        var fpsButtonLoopTask = _fpsButtonLoopTask;
+        var perfLoopTask = _perfLoopTask;
         StopFpsButtonLoop();
         StopPerfLoop();
+        if (fpsButtonLoopTask is not null)
+            await AwaitQuietlyAsync(fpsButtonLoopTask);
+        if (perfLoopTask is not null)
+            await AwaitQuietlyAsync(perfLoopTask);
+
         await Effects.DisposeAsync();
         await Renderer.DisposeAsync();
         await Audio.DisposeAsync();
