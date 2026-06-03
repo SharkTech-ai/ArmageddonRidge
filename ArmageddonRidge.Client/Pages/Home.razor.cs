@@ -67,6 +67,8 @@ public partial class Home
     private bool _shotPlaybackInProgress;
     private int? _displayPlayerHealth;
     private int? _displayCpuHealth;
+    private float? _displayPlayerShield;
+    private float? _displayCpuShield;
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
     private CancellationTokenSource? _perfLoop;
@@ -237,7 +239,7 @@ public partial class Home
             var cpuShieldBefore = _state.CpuTank.Shield;
             var playerPreShotScene = BuildScene();
             var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
-            HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
+            HoldDisplayedDamage(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
             RecordTracerTrail(playerShot.Trail);
             await PlayResolutionAsync(
                 playerPreShotScene,
@@ -262,7 +264,7 @@ public partial class Home
                 cpuShieldBefore = _state.CpuTank.Shield;
                 var cpuPreShotScene = BuildScene();
                 var cpuShot = Engine.FirePlannedCpuTurn(_state, _settings, cpuPlan);
-                HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
+                HoldDisplayedDamage(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
                 await PlayResolutionAsync(
                     cpuPreShotScene,
                     cpuShot,
@@ -338,7 +340,7 @@ public partial class Home
         finally
         {
             _shotPlaybackInProgress = false;
-            ReleaseDisplayedHealth();
+            ReleaseDisplayedDamage();
         }
 
         await InvokeAsync(StateHasChanged);
@@ -715,8 +717,11 @@ public partial class Home
 
     private static int TankHealth(Tank tank) => Math.Max(0, tank.Health);
 
-    private static string TankShieldWidth(Tank tank) =>
-        $"{Math.Clamp(MathF.Max(0, tank.Shield) / 120f, 0, 1) * 100:0}%";
+    private float DisplayTankShield(Tank tank, bool player) =>
+        MathF.Max(0, player ? _displayPlayerShield ?? tank.Shield : _displayCpuShield ?? tank.Shield);
+
+    private string TankShieldWidth(Tank tank, bool player) =>
+        $"{Math.Clamp(DisplayTankShield(tank, player) / 120f, 0, 1) * 100:0}%";
 
     private static bool ShieldChanged(float playerShieldBefore, float playerShieldAfter, float cpuShieldBefore, float cpuShieldAfter) =>
         playerShieldAfter < playerShieldBefore || cpuShieldAfter < cpuShieldBefore;
@@ -732,7 +737,7 @@ public partial class Home
         _cpuHurt = TankHealth(_state.CpuTank) < Math.Max(0, cpuHealthBefore);
         _playerShieldHit = _state.PlayerTank.Shield < playerShieldBefore;
         _cpuShieldHit = _state.CpuTank.Shield < cpuShieldBefore;
-        ReleaseDisplayedHealth();
+        ReleaseDisplayedDamage();
 
         if (!AnyTankFeedback) return;
 
@@ -758,16 +763,20 @@ public partial class Home
         _cpuShieldHit = false;
     }
 
-    private void HoldDisplayedHealth(int playerHealthBefore, int cpuHealthBefore)
+    private void HoldDisplayedDamage(int playerHealthBefore, int cpuHealthBefore, float playerShieldBefore, float cpuShieldBefore)
     {
         _displayPlayerHealth = Math.Max(0, playerHealthBefore);
         _displayCpuHealth = Math.Max(0, cpuHealthBefore);
+        _displayPlayerShield = MathF.Max(0, playerShieldBefore);
+        _displayCpuShield = MathF.Max(0, cpuShieldBefore);
     }
 
-    private void ReleaseDisplayedHealth()
+    private void ReleaseDisplayedDamage()
     {
         _displayPlayerHealth = null;
         _displayCpuHealth = null;
+        _displayPlayerShield = null;
+        _displayCpuShield = null;
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs args)

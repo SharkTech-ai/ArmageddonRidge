@@ -62,7 +62,7 @@
                             <span style="width:@TankHealthWidth(_state.PlayerTank, true)"></span>
                         </div>
                         <div class="fighter-bar shield">
-                            <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
+                            <span style="width:@TankShieldWidth(_state.PlayerTank, true)"></span>
                         </div>
                     </div>
 
@@ -81,7 +81,7 @@
                             <span style="width:@TankHealthWidth(_state.CpuTank, false)"></span>
                         </div>
                         <div class="fighter-bar shield">
-                            <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
+                            <span style="width:@TankShieldWidth(_state.CpuTank, false)"></span>
                         </div>
                     </div>
                 </div>
@@ -153,8 +153,18 @@
                 </header>
 
                 <div class="tank-bars">
-                    <TankReadout Label="Player" Tank="_state.PlayerTank" HealthHit="_playerHurt" ShieldHit="_playerShieldHit" />
-                    <TankReadout Label="@_state.CpuTank.Name" Tank="_state.CpuTank" HealthHit="_cpuHurt" ShieldHit="_cpuShieldHit" />
+                    <TankReadout Label="Player"
+                                 Tank="_state.PlayerTank"
+                                 DisplayHealth="DisplayTankHealth(_state.PlayerTank, true)"
+                                 DisplayShield="DisplayTankShield(_state.PlayerTank, true)"
+                                 HealthHit="_playerHurt"
+                                 ShieldHit="_playerShieldHit" />
+                    <TankReadout Label="@_state.CpuTank.Name"
+                                 Tank="_state.CpuTank"
+                                 DisplayHealth="DisplayTankHealth(_state.CpuTank, false)"
+                                 DisplayShield="DisplayTankShield(_state.CpuTank, false)"
+                                 HealthHit="_cpuHurt"
+                                 ShieldHit="_cpuShieldHit" />
                 </div>
 
                 <div class="wind-card">
