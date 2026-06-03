@@ -360,8 +360,9 @@ public sealed class GameEngineTests
         state.Wind = 0;
         engine.StartBattle(state);
         state.CurrentTurn = TurnOwner.Cpu;
+        var plan = new CpuShotPlan(WeaponIds.PeaShell, 180, 100, "", 0, 0);
 
-        engine.FireCurrentTurn(state, settings, angle: 180, power: 100);
+        engine.FirePlannedCpuTurn(state, settings, plan);
 
         Assert.True(state.PlayerTank.Health < state.PlayerTank.MaxHealth);
     }
