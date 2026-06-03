@@ -46,4 +46,15 @@ public sealed class GameSettingsTests
         Assert.NotNull(restored);
         Assert.Equal(RenderMode.FullWasm, restored.RenderMode);
     }
+
+    [Fact]
+    public void DisabledNuclearWeaponsRoundTripThroughSaveSettings()
+    {
+        var settings = new GameSettings(EnableNuclearWeapons: false);
+        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var restored = JsonSerializer.Deserialize<GameSettings>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(restored);
+        Assert.False(restored.EnableNuclearWeapons);
+    }
 }

@@ -30,6 +30,7 @@ public partial class Home
     private bool _screenShake = true;
     private bool _reducedMotion;
     private bool _targetingComputerEnabledByDefault = true;
+    private bool _enableNuclearWeapons = true;
     private bool _webGpuEffectsEnabled = true;
     private RenderMode _renderMode = RenderMode.Hybrid;
     private float _sfxVolume = 0.9f;
@@ -178,6 +179,7 @@ public partial class Home
                 _screenShake = save.Settings.ScreenShake;
                 _reducedMotion = save.Settings.ReducedMotion;
                 _targetingComputerEnabledByDefault = save.Settings.TargetingComputerEnabledByDefault;
+                _enableNuclearWeapons = save.Settings.EnableNuclearWeapons;
                 _webGpuEffectsEnabled = save.Settings.WebGpuEffectsEnabled;
                 _renderMode = save.Settings.RenderMode;
                 _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
@@ -196,7 +198,11 @@ public partial class Home
 
     private async Task NewDuelAsync()
     {
-        _settings = new MatchSettings(Difficulty: _difficulty, StartingCash: _startingCash, TerrainSeed: Random.Shared.Next(10_000, 99_999));
+        _settings = new MatchSettings(
+            Difficulty: _difficulty,
+            StartingCash: _startingCash,
+            TerrainSeed: Random.Shared.Next(10_000, 99_999),
+            EnableNuclearWeapons: _enableNuclearWeapons);
         _state = Engine.NewMatch(_settings);
         ClearDamageFeedback();
         _tracerTrails.Clear();
@@ -478,12 +484,17 @@ public partial class Home
 
     private async Task BuyWeaponAsync(string weaponId)
     {
-        if (_state is not null && Engine.BuyWeapon(_state, weaponId))
+        if (_state is null || !WeaponIsEnabled(weaponId)) return;
+
+        if (Engine.BuyWeapon(_state, weaponId))
         {
             RefreshPlayerWeapons();
             await Audio.PlayAsync("menu");
         }
     }
+
+    private bool WeaponIsEnabled(string weaponId) =>
+        _enableNuclearWeapons || Weapons.Get(weaponId).Category != WeaponCategory.Nuclear;
 
     private async Task BuyUpgradeAsync(UpgradeType upgrade)
     {
@@ -883,6 +894,14 @@ public partial class Home
         if (_state?.Phase == GamePhase.Battle) await RenderSceneAsync();
     }
 
+    private async Task HandleNuclearWeaponsChangedAsync(ChangeEventArgs args)
+    {
+        _enableNuclearWeapons = CheckedValue(args);
+        _settings = _settings with { EnableNuclearWeapons = _enableNuclearWeapons };
+        RefreshPlayerWeapons();
+        await PersistSaveAsync();
+    }
+
     private async Task HandleWebGpuEffectsChangedAsync(ChangeEventArgs args)
     {
         _webGpuEffectsEnabled = CheckedValue(args);
@@ -930,6 +949,7 @@ public partial class Home
                 SfxVolume: _sfxVolume,
                 ScreenShake: _screenShake,
                 ReducedMotion: _reducedMotion,
+                EnableNuclearWeapons: _enableNuclearWeapons,
                 Difficulty: _difficulty,
                 StartingCash: _startingCash,
                 TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault,
@@ -1142,6 +1162,7 @@ public partial class Home
         for (var i = 0; i < _allWeapons.Length; i++)
         {
             var weapon = _allWeapons[i];
+            if (!WeaponIsEnabled(weapon.Id)) continue;
             if (_state.PlayerTank.HasWeapon(weapon.Id) || weapon.Id == WeaponIds.PeaShell) weapons.Add(weapon);
         }
 

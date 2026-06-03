@@ -181,6 +181,7 @@
                     <ShopPanel Weapons="AllWeapons"
                                Upgrades="AllUpgrades"
                                State="_state"
+                               EnableNuclearWeapons="_enableNuclearWeapons"
                                TargetingComputerEnabledByDefault="_targetingComputerEnabledByDefault"
                                OnBuyWeapon="BuyWeaponAsync"
                                OnBuyUpgrade="BuyUpgradeAsync"
@@ -245,6 +246,10 @@
             <label class="settings-row">
                 <span>Targeting computer</span>
                 <input type="checkbox" checked="@_targetingComputerEnabledByDefault" @onchange="HandleTargetingComputerChangedAsync" />
+            </label>
+            <label class="settings-row">
+                <span>Nuclear weapons</span>
+                <input type="checkbox" checked="@_enableNuclearWeapons" @onchange="HandleNuclearWeaponsChangedAsync" />
             </label>
             <label class="settings-row">
                 <span>Rendering</span>
