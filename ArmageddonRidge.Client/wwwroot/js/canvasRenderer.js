@@ -122,7 +122,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     }
 
     const stagedStarts = new Map();
-    const baseDuration = shotDuration(points.length, weaponId);
+    const baseDuration = shotDuration(points.length, weaponId, playbackOptions.visualKind);
     const duration = playbackOptions.intercepted
         ? clamp(baseDuration * patriotInterceptDurationScale, patriotInterceptMinDuration, patriotInterceptMaxDuration)
         : baseDuration;
@@ -1319,7 +1319,7 @@ function drawTrail(points, count = points.length, weaponId, explosions = [], vis
         return;
     }
 
-    if (isDroneWeapon(weaponId)) {
+    if (isDroneWeapon(weaponId, visualKind)) {
         drawDroneSwarmTrail(points, visibleCount, weaponId);
         ctx.restore();
         return;
@@ -1337,9 +1337,9 @@ function drawTrail(points, count = points.length, weaponId, explosions = [], vis
         return;
     }
 
-    const missileLike = isMissileWeapon(weaponId) || (!weaponId && visibleCount > 36);
+    const missileLike = isMissileWeapon(weaponId, visualKind) || (!weaponId && visibleCount > 36);
     if (missileLike) {
-        drawSmokeTrail(points, visibleCount, weaponId);
+        drawSmokeTrail(points, visibleCount, weaponId, visualKind);
     }
 
     ctx.strokeStyle = missileLike ? "rgba(255, 246, 191, 0.86)" : "#fff6bf";
@@ -1357,8 +1357,8 @@ function drawTrail(points, count = points.length, weaponId, explosions = [], vis
     const last = points[visibleCount - 1];
     const prev = trajectoryReferencePoint(points, visibleCount);
     const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
-    drawFlameTip(last, prev, missileLike && !isMopWeapon(weaponId));
-    if (isMopWeapon(weaponId)) {
+    drawFlameTip(last, prev, missileLike && !isMopWeapon(weaponId, visualKind));
+    if (isMopWeapon(weaponId, visualKind)) {
         drawMopProjectile(last, prev);
     } else if (missileLike) {
         drawOrientedSprite("missile", last.x, last.y, 34, 14, angle);
@@ -1588,8 +1588,8 @@ function findTrajectoryApexIndex(points) {
     return index;
 }
 
-function drawSmokeTrail(points, count, weaponId) {
-    const napalm = isNapalmWeapon(weaponId);
+function drawSmokeTrail(points, count, weaponId, visualKind) {
+    const napalm = isNapalmWeapon(weaponId, visualKind);
     const step = Math.max(2, Math.floor(count / 28));
     for (let i = Math.max(0, count - 120); i < count; i += step) {
         const point = points[i];
@@ -2475,12 +2475,12 @@ function drawRadioactiveGlyph(x, y, size, alpha = 1) {
     ctx.restore();
 }
 
-function shotDuration(pointCount, weaponId) {
+function shotDuration(pointCount, weaponId, visualKind) {
     if (isDarkEagleWeapon(weaponId)) {
         return 2900;
     }
 
-    if (isDroneWeapon(weaponId)) {
+    if (isDroneWeapon(weaponId, visualKind)) {
         return Math.min(3400, Math.max(1500, pointCount * 13));
     }
 
@@ -2488,7 +2488,7 @@ function shotDuration(pointCount, weaponId) {
         return Math.min(1800, Math.max(900, pointCount * 5.5));
     }
 
-    const dramatic = isMopWeapon(weaponId);
+    const dramatic = isMopWeapon(weaponId, visualKind);
     return Math.min(
         dramatic ? 2100 : 1200,
         Math.max(dramatic ? 900 : 260, pointCount * (dramatic ? 8.5 : 4)));
