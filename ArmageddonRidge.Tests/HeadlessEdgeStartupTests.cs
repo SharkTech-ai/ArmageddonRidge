@@ -92,6 +92,7 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
         Assert.True(result.BrowserResponsiveAfterPerfClose, "The browser did not respond after closing the FPS overlay.");
         Assert.True(result.FireButtonDisabledDuringShot, "The Fire button did not disable during player shot playback.");
+        Assert.True(result.KeyboardControlsLockedDuringShot, "Keyboard aim controls changed while the shot/CPU turn had player controls locked.");
         Assert.True(result.PlayerTurnRecoveredAfterCpuCycle, "The browser did not recover to a player fireable state, or round-over state, after the CPU response.");
         Assert.Empty(result.ConsoleErrors);
         Assert.Empty(result.Exceptions);
@@ -541,6 +542,7 @@ public sealed class HeadlessEdgeStartupTests
             }
 
             var fireButtonDisabledDuringShot = false;
+            var keyboardControlsLockedDuringShot = false;
             var playerTurnRecoveredAfterCpuCycle = false;
             if (battleConsoleRendered)
             {
@@ -549,6 +551,32 @@ public sealed class HeadlessEdgeStartupTests
                 fireButtonDisabledDuringShot = await client.EvaluateBooleanAsync("""
                     Boolean(document.querySelector('.battle-console .console-fire')?.disabled)
                     """);
+                var angleBeforeLockedKey = await client.EvaluateStringAsync("""
+                    Array.from(document.querySelectorAll('.console-field'))
+                        .find(field => field.textContent?.includes('Angle'))
+                        ?.querySelector('strong')
+                        ?.textContent
+                        ?.trim() ?? ''
+                    """);
+                await client.EvaluateBooleanAsync("""
+                    (() => {
+                        const root = document.querySelector('.game-root');
+                        if (!root) return false;
+                        root.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+                        return true;
+                    })()
+                    """);
+                await Task.Delay(TimeSpan.FromMilliseconds(200));
+                var angleAfterLockedKey = await client.EvaluateStringAsync("""
+                    Array.from(document.querySelectorAll('.console-field'))
+                        .find(field => field.textContent?.includes('Angle'))
+                        ?.querySelector('strong')
+                        ?.textContent
+                        ?.trim() ?? ''
+                    """);
+                keyboardControlsLockedDuringShot =
+                    !string.IsNullOrWhiteSpace(angleBeforeLockedKey)
+                    && string.Equals(angleBeforeLockedKey, angleAfterLockedKey, StringComparison.Ordinal);
                 playerTurnRecoveredAfterCpuCycle = await client.WaitForBooleanAsync("""
                     (() => {
                         const fire = document.querySelector('.battle-console .console-fire');
@@ -581,6 +609,7 @@ public sealed class HeadlessEdgeStartupTests
                 perfOverlayClosed,
                 browserResponsiveAfterPerfClose,
                 fireButtonDisabledDuringShot,
+                keyboardControlsLockedDuringShot,
                 playerTurnRecoveredAfterCpuCycle,
                 options.DisableWebGpuEffects,
                 options.UseFullWasmRenderer,
@@ -722,6 +751,7 @@ public sealed class HeadlessEdgeStartupTests
         bool PerfOverlayClosed,
         bool BrowserResponsiveAfterPerfClose,
         bool FireButtonDisabledDuringShot,
+        bool KeyboardControlsLockedDuringShot,
         bool PlayerTurnRecoveredAfterCpuCycle,
         bool ExpectedWebGpuEffectsDisabled,
         bool ExpectedFullWasmRenderer,

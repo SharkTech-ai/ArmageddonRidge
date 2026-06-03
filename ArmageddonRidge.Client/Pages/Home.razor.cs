@@ -796,6 +796,20 @@ public partial class Home
     {
         if (_state is null) return;
 
+        if (args.Key == "Escape")
+        {
+            ToggleSettings();
+            return;
+        }
+
+        if (args.Key == "`")
+        {
+            TogglePerf();
+            return;
+        }
+
+        if (!CanFirePlayer) return;
+
         switch (args.Key)
         {
             case "ArrowLeft":
@@ -817,12 +831,6 @@ public partial class Home
                 break;
             case "Tab":
                 CycleWeapon();
-                break;
-            case "Escape":
-                ToggleSettings();
-                break;
-            case "`":
-                TogglePerf();
                 break;
         }
     }
