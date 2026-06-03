@@ -285,12 +285,12 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     /// <summary>
     /// Produces the approximate player shot preview used by the targeting computer.
     /// </summary>
-    public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, float angle, int power)
+    public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, MatchSettings settings, float angle, int power)
     {
         if (state.Phase != GamePhase.Battle || state.CurrentTurn != TurnOwner.Player)
             return [];
 
-        var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId)
+        var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId) && WeaponIsEnabled(state.SelectedWeaponId, settings)
             ? state.SelectedWeaponId
             : WeaponIds.PeaShell;
         var weapon = Weapons.Get(weaponId);

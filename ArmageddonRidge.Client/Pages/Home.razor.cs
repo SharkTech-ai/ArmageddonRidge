@@ -646,7 +646,7 @@ public partial class Home
     {
         if (_state is null || !HasTargetingComputer) return EmptyPreview();
 
-        var trail = Engine.PreviewPlayerShot(_state, _state.PlayerTank.TurretAngle, _power);
+        var trail = Engine.PreviewPlayerShot(_state, _settings, _state.PlayerTank.TurretAngle, _power);
         if (trail.Count < 3) return EmptyPreview();
 
         var apexIndex = 0;

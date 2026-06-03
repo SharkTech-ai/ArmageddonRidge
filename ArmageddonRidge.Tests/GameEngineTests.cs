@@ -250,10 +250,10 @@ public sealed class GameEngineTests
         var state = engine.NewMatch(settings);
         engine.StartBattle(state);
 
-        var preview = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+        var preview = engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65);
 
         Assert.NotEmpty(preview);
-        Assert.Equal(preview, engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65));
+        Assert.Equal(preview, engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65));
     }
 
     [Fact]
@@ -265,12 +265,30 @@ public sealed class GameEngineTests
         engine.StartBattle(state);
 
         state.Wind = GameConstants.WindMin;
-        var leftWind = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+        var leftWind = engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65);
         state.Wind = GameConstants.WindMax;
-        var rightWind = engine.PreviewPlayerShot(state, state.PlayerTank.TurretAngle, 65);
+        var rightWind = engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65);
 
         Assert.NotEmpty(leftWind);
         Assert.NotEqual(leftWind, rightWind);
+    }
+
+    [Fact]
+    public void DisabledNukePreviewFallsBackToPeaShellTrajectory()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableNuclearWeapons: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.AddWeapon(WeaponIds.TacticalNuke, 1);
+        state.SelectedWeaponId = WeaponIds.TacticalNuke;
+        engine.StartBattle(state);
+
+        var disabledNukePreview = engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65);
+        state.SelectedWeaponId = WeaponIds.PeaShell;
+        var peaShellPreview = engine.PreviewPlayerShot(state, settings, state.PlayerTank.TurretAngle, 65);
+
+        Assert.NotEmpty(disabledNukePreview);
+        Assert.Equal(peaShellPreview, disabledNukePreview);
     }
 
     [Fact]
