@@ -55,7 +55,9 @@ public sealed class HeadlessEdgeStartupTests
 
     private static void AssertCleanBoot(BrowserSmokeResult result)
     {
-        Assert.True(result.GameRootRendered, "Blazor did not render .game-root.");
+        Assert.True(
+            result.GameRootRendered,
+            $"Blazor did not render .game-root.{Environment.NewLine}{FormatStartupDiagnostics(result)}");
         Assert.True(result.BattlefieldRendered, "The battlefield canvas did not render after starting a duel.");
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
@@ -88,6 +90,28 @@ public sealed class HeadlessEdgeStartupTests
         Assert.Empty(result.Exceptions);
         Assert.Empty(result.NetworkFailures);
         Assert.Empty(result.FailedResponses);
+    }
+
+    private static string FormatStartupDiagnostics(BrowserSmokeResult result)
+    {
+        var builder = new StringBuilder(result.StartupDiagnostics);
+        AppendDiagnostics(builder, "Console errors", result.ConsoleErrors);
+        AppendDiagnostics(builder, "Exceptions", result.Exceptions);
+        AppendDiagnostics(builder, "Network failures", result.NetworkFailures);
+        AppendDiagnostics(builder, "Failed responses", result.FailedResponses);
+        return builder.ToString();
+    }
+
+    private static void AppendDiagnostics(StringBuilder builder, string title, IReadOnlyCollection<string> entries)
+    {
+        if (entries.Count == 0) return;
+
+        builder.AppendLine();
+        builder.AppendLine(title + ":");
+        foreach (var entry in entries)
+        {
+            builder.AppendLine(entry);
+        }
     }
 
     private static async Task RunDebugBuildAsync(string repoRoot, string clientProject)
@@ -195,7 +219,14 @@ public sealed class HeadlessEdgeStartupTests
             try
             {
                 using var response = await client.GetAsync(appUrl);
-                if (response.IsSuccessStatusCode) return;
+                if (response.IsSuccessStatusCode)
+                {
+                    var rootHtml = await response.Content.ReadAsStringAsync();
+                    if (rootHtml.Contains("blazor.webassembly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                }
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
@@ -251,9 +282,10 @@ public sealed class HeadlessEdgeStartupTests
             var gameRootRendered = await client.WaitForBooleanAsync("Boolean(document.querySelector('.game-root'))", BrowserStartupTimeout);
             if (!gameRootRendered)
             {
-                await client.NavigateAsync(appUrl);
+                await client.ReloadIgnoringCacheAsync();
                 gameRootRendered = await client.WaitForBooleanAsync("Boolean(document.querySelector('.game-root'))", BrowserStartupTimeout);
             }
+            var startupDiagnostics = gameRootRendered ? string.Empty : await client.CaptureStartupDiagnosticsAsync();
 
             if (gameRootRendered)
             {
@@ -452,6 +484,7 @@ public sealed class HeadlessEdgeStartupTests
                 playerTurnRecoveredAfterCpuCycle,
                 options.DisableWebGpuEffects,
                 options.UseFullWasmRenderer,
+                startupDiagnostics,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
@@ -586,6 +619,7 @@ public sealed class HeadlessEdgeStartupTests
         bool PlayerTurnRecoveredAfterCpuCycle,
         bool ExpectedWebGpuEffectsDisabled,
         bool ExpectedFullWasmRenderer,
+        string StartupDiagnostics,
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
@@ -682,6 +716,11 @@ public sealed class HeadlessEdgeStartupTests
             return SendAsync("Page.navigate", new Dictionary<string, object?> { ["url"] = url });
         }
 
+        public Task ReloadIgnoringCacheAsync()
+        {
+            return SendAsync("Page.reload", new Dictionary<string, object?> { ["ignoreCache"] = true });
+        }
+
         public async Task<bool> EvaluateBooleanAsync(string expression)
         {
             var result = await SendAsync("Runtime.evaluate", new Dictionary<string, object?>
@@ -706,6 +745,28 @@ public sealed class HeadlessEdgeStartupTests
             if (!result.TryGetProperty("result", out var runtimeResult)) return string.Empty;
             if (!runtimeResult.TryGetProperty("value", out var value)) return string.Empty;
             return value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+        }
+
+        public async Task<string> CaptureStartupDiagnosticsAsync()
+        {
+            return await EvaluateStringAsync("""
+                (() => {
+                    const errorUi = document.querySelector('#blazor-error-ui');
+                    const app = document.querySelector('#app');
+                    const trim = value => (value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+                    return JSON.stringify({
+                        href: location.href,
+                        readyState: document.readyState,
+                        title: document.title,
+                        blazorLoaded: Boolean(window.Blazor),
+                        appText: trim(app?.textContent),
+                        appHtml: trim(app?.innerHTML),
+                        errorUiDisplay: errorUi ? getComputedStyle(errorUi).display : null,
+                        errorUiText: trim(errorUi?.textContent),
+                        scripts: Array.from(document.scripts).map(script => script.src || script.textContent?.slice(0, 120))
+                    });
+                })()
+                """);
         }
 
         public async Task<bool> WaitForBooleanAsync(string expression, TimeSpan timeout)
