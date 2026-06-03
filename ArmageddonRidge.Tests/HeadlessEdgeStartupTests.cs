@@ -38,12 +38,12 @@ public sealed class HeadlessEdgeStartupTests
         var appUrl = $"https://localhost:{appPort}/";
 
         using var app = await StartClientAsync(repoRoot, clientProject, appUrl);
-        var firstBoot = await RunHeadlessEdgeAsync(edgePath, appUrl);
+        var firstBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.Default);
         AssertCleanBoot(firstBoot);
 
         await RunDebugBuildAsync(repoRoot, clientProject);
 
-        var secondBoot = await RunHeadlessEdgeAsync(edgePath, appUrl);
+        var secondBoot = await RunHeadlessEdgeAsync(edgePath, appUrl, BrowserSmokeOptions.WebGpuEffectsDisabled);
         AssertCleanBoot(secondBoot);
     }
 
@@ -57,6 +57,11 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
         Assert.True(result.BattlefieldCanvasChangedAfterAmbientTick, "The battlefield canvas did not update while idle; clouds and weather may be frozen.");
         Assert.True(result.PerfOverlayOpened, "The FPS overlay did not open after clicking FPS.");
+        if (result.ExpectedWebGpuEffectsDisabled)
+        {
+            Assert.True(result.PerfOverlayShowsWebGpuEffectsOff, "The FPS overlay did not report 'FX: Off' after disabling WebGPU effects.");
+        }
+
         Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
         Assert.True(result.BrowserResponsiveAfterPerfClose, "The browser did not respond after closing the FPS overlay.");
         Assert.Empty(result.ConsoleErrors);
@@ -183,7 +188,7 @@ public sealed class HeadlessEdgeStartupTests
         throw new TimeoutException($"Timed out waiting for {appUrl}. Last error: {lastException?.Message}{Environment.NewLine}{string.Join(Environment.NewLine, output)}");
     }
 
-    private async Task<BrowserSmokeResult> RunHeadlessEdgeAsync(string edgePath, string appUrl)
+    private async Task<BrowserSmokeResult> RunHeadlessEdgeAsync(string edgePath, string appUrl, BrowserSmokeOptions options)
     {
         var cdpPort = GetAvailablePort();
         var profilePath = Path.Combine(Path.GetTempPath(), $"armageddon-ridge-edge-{Guid.NewGuid():N}");
@@ -237,6 +242,33 @@ public sealed class HeadlessEdgeStartupTests
                         return true;
                     })()
                     """);
+                if (options.DisableWebGpuEffects)
+                {
+                    await client.ClickButtonByTextAsync("Settings");
+                    await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    var disabled = await client.EvaluateBooleanAsync("""
+                        (() => {
+                            const row = Array.from(document.querySelectorAll('.settings-row'))
+                                .find(candidate => candidate.textContent?.includes('WebGPU effects'));
+                            const checkbox = row?.querySelector('input[type="checkbox"]');
+                            if (!checkbox) return false;
+                            if (checkbox.checked) {
+                                checkbox.click();
+                            }
+
+                            return !checkbox.checked;
+                        })()
+                        """);
+                    if (!disabled)
+                    {
+                        throw new InvalidOperationException("Could not disable WebGPU effects before browser smoke duel.");
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    await client.ClickSelectorAsync(".settings-head .icon-button");
+                    await Task.Delay(TimeSpan.FromMilliseconds(250));
+                }
+
                 await client.ClickButtonByTextAsync("New Duel");
                 await Task.Delay(TimeSpan.FromSeconds(2));
                 var shopStartVisible = await client.EvaluateBooleanAsync("""
@@ -266,12 +298,17 @@ public sealed class HeadlessEdgeStartupTests
                 !string.Equals(firstBattlefieldFrame, secondBattlefieldFrame, StringComparison.Ordinal);
             var perfOverlayOpened = false;
             var perfOverlayClosed = false;
+            var perfOverlayShowsWebGpuEffectsOff = false;
             var browserResponsiveAfterPerfClose = false;
             if (battlefieldFpsButtonRendered)
             {
                 await client.ClickSelectorAsync(".battlefield-fps-button");
                 await Task.Delay(TimeSpan.FromMilliseconds(650));
                 perfOverlayOpened = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.perf-overlay'))");
+                perfOverlayShowsWebGpuEffectsOff = await client.EvaluateBooleanAsync("""
+                    Array.from(document.querySelectorAll('.perf-overlay span'))
+                        .some(span => span.textContent?.trim() === 'FX: Off')
+                    """);
                 await client.ClickSelectorAsync(".battlefield-fps-button");
                 await Task.Delay(TimeSpan.FromMilliseconds(650));
                 perfOverlayClosed = await client.EvaluateBooleanAsync("!document.querySelector('.perf-overlay')");
@@ -287,8 +324,10 @@ public sealed class HeadlessEdgeStartupTests
                 battlefieldFpsButtonShowsValue,
                 battlefieldCanvasChangedAfterAmbientTick,
                 perfOverlayOpened,
+                perfOverlayShowsWebGpuEffectsOff,
                 perfOverlayClosed,
                 browserResponsiveAfterPerfClose,
+                options.DisableWebGpuEffects,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
@@ -412,12 +451,21 @@ public sealed class HeadlessEdgeStartupTests
         bool BattlefieldFpsButtonShowsValue,
         bool BattlefieldCanvasChangedAfterAmbientTick,
         bool PerfOverlayOpened,
+        bool PerfOverlayShowsWebGpuEffectsOff,
         bool PerfOverlayClosed,
         bool BrowserResponsiveAfterPerfClose,
+        bool ExpectedWebGpuEffectsDisabled,
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
         string[] FailedResponses);
+
+    private sealed record BrowserSmokeOptions(bool DisableWebGpuEffects)
+    {
+        public static BrowserSmokeOptions Default { get; } = new(false);
+
+        public static BrowserSmokeOptions WebGpuEffectsDisabled { get; } = new(true);
+    }
 
     private sealed record DevToolsTarget(string Type, string WebSocketDebuggerUrl);
 
