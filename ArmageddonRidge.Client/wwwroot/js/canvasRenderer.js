@@ -1908,10 +1908,11 @@ function drawDroneSwarmTrail(points, count, weaponId) {
         const startIndex = Math.max(0, headIndex - 92);
         const phase = drone * 1.73;
         const spin = droneSpinDirection(drone, points.length);
+        const pointCache = [];
         ctx.fillStyle = drone % 2 === 0 ? "rgba(255, 231, 139, 0.7)" : "rgba(126, 226, 213, 0.62)";
 
         for (let i = startIndex; i <= headIndex; i += 6) {
-            const point = dronePoint(points, i, drone, phase, spin);
+            const point = cachedDronePoint(pointCache, points, i, drone, phase, spin);
             const age = (headIndex - i) / Math.max(1, headIndex - startIndex);
             const alpha = Math.max(0.12, 0.52 * (1 - age));
             ctx.fillStyle = `rgba(255, 231, 139, ${alpha})`;
@@ -1920,13 +1921,23 @@ function drawDroneSwarmTrail(points, count, weaponId) {
             ctx.fill();
         }
 
-        const head = dronePoint(points, headIndex, drone, phase, spin);
+        const head = cachedDronePoint(pointCache, points, headIndex, drone, phase, spin);
         const tailIndex = Math.max(0, headIndex - 5);
-        const tail = dronePoint(points, tailIndex, drone, phase, spin);
+        const tail = cachedDronePoint(pointCache, points, tailIndex, drone, phase, spin);
         const baseAngle = Math.atan2(head.y - tail.y, head.x - tail.x);
         const angle = baseAngle + Math.sin((headIndex * 0.045) + phase) * 0.16;
         drawShahedDrone(head.x, head.y, angle, weaponId, 1 + (drone % 3) * 0.06);
     }
+}
+
+function cachedDronePoint(cache, points, index, drone, phase, spin) {
+    let point = cache[index];
+    if (!point) {
+        point = dronePoint(points, index, drone, phase, spin);
+        cache[index] = point;
+    }
+
+    return point;
 }
 
 function dronePoint(points, index, drone, phase, spin) {
@@ -1962,6 +1973,13 @@ function drawShahedDrone(x, y, angle, weaponId, scale = 1) {
     ctx.rotate(angle);
     ctx.scale(scale, scale);
     if (hasSprite("shahedDrone")) {
+        ctx.save();
+        ctx.globalAlpha = 0.42;
+        ctx.fillStyle = "#050708";
+        ctx.beginPath();
+        ctx.ellipse(0, 3, 25, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
         drawExtraSprite("shahedDrone", -24, -12, 48, 24);
         ctx.restore();
         return;
