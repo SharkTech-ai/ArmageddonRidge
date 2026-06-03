@@ -54,6 +54,9 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
+        Assert.True(result.PerfOverlayOpened, "The FPS overlay did not open after clicking FPS.");
+        Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
+        Assert.True(result.BrowserResponsiveAfterPerfClose, "The browser did not respond after closing the FPS overlay.");
         Assert.Empty(result.ConsoleErrors);
         Assert.Empty(result.Exceptions);
         Assert.Empty(result.NetworkFailures);
@@ -249,6 +252,19 @@ public sealed class HeadlessEdgeStartupTests
             var effectsCanvasRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('canvas.battlefield-effects'))");
             var battleConsoleRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battle-console'))");
             var battlefieldFpsButtonRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battlefield-fps-button'))");
+            var perfOverlayOpened = false;
+            var perfOverlayClosed = false;
+            var browserResponsiveAfterPerfClose = false;
+            if (battlefieldFpsButtonRendered)
+            {
+                await client.ClickSelectorAsync(".battlefield-fps-button");
+                await Task.Delay(TimeSpan.FromMilliseconds(650));
+                perfOverlayOpened = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.perf-overlay'))");
+                await client.ClickSelectorAsync(".battlefield-fps-button");
+                await Task.Delay(TimeSpan.FromMilliseconds(650));
+                perfOverlayClosed = await client.EvaluateBooleanAsync("!document.querySelector('.perf-overlay')");
+                browserResponsiveAfterPerfClose = await client.EvaluateBooleanAsync("(() => 21 * 2 === 42)()");
+            }
 
             return new BrowserSmokeResult(
                 gameRootRendered,
@@ -256,6 +272,9 @@ public sealed class HeadlessEdgeStartupTests
                 effectsCanvasRendered,
                 battleConsoleRendered,
                 battlefieldFpsButtonRendered,
+                perfOverlayOpened,
+                perfOverlayClosed,
+                browserResponsiveAfterPerfClose,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
@@ -376,6 +395,9 @@ public sealed class HeadlessEdgeStartupTests
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
         bool BattlefieldFpsButtonRendered,
+        bool PerfOverlayOpened,
+        bool PerfOverlayClosed,
+        bool BrowserResponsiveAfterPerfClose,
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
@@ -466,7 +488,12 @@ public sealed class HeadlessEdgeStartupTests
                 (() => {
                     const wanted = {{JsonSerializer.Serialize(text)}};
                     const button = Array.from(document.querySelectorAll('button'))
-                        .find(candidate => candidate.textContent.trim() === wanted);
+                        .find(candidate => {
+                            if (candidate.textContent.trim() !== wanted) return false;
+                            const rect = candidate.getBoundingClientRect();
+                            const style = getComputedStyle(candidate);
+                            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                        });
                     if (!button) return null;
                     const rect = button.getBoundingClientRect();
                     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -496,6 +523,27 @@ public sealed class HeadlessEdgeStartupTests
                     """,
                 ["returnByValue"] = true
             });
+        }
+
+        public async Task ClickSelectorAsync(string selector)
+        {
+            var center = await EvaluatePointAsync($$"""
+                (() => {
+                    const element = document.querySelector({{JsonSerializer.Serialize(selector)}});
+                    if (!element) return null;
+                    const rect = element.getBoundingClientRect();
+                    if (rect.width <= 0 || rect.height <= 0) return null;
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                })()
+                """);
+            if (center is null)
+            {
+                throw new InvalidOperationException($"Could not find visible element matching selector '{selector}'.");
+            }
+
+            await SendMouseAsync("mouseMoved", center.X, center.Y, "none", 0);
+            await SendMouseAsync("mousePressed", center.X, center.Y, "left", 1);
+            await SendMouseAsync("mouseReleased", center.X, center.Y, "left", 1);
         }
 
         private async Task<ViewportPoint?> EvaluatePointAsync(string expression)

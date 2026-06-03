@@ -70,6 +70,7 @@ public partial class Home
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
     private CancellationTokenSource? _perfLoop;
+    private Task? _perfLoopTask;
     private bool _playerHurt;
     private bool _cpuHurt;
     private bool _playerShieldHit;
@@ -970,33 +971,66 @@ public partial class Home
 
     private void StartPerfLoop()
     {
-        StopPerfLoop();
+        if (_perfLoopTask is { IsCompleted: false })
+            return;
+
+        _perfLoop?.Dispose();
         _perfLoop = new CancellationTokenSource();
-        _ = PollPerfAsync(_perfLoop.Token);
+        _perfLoopTask = PollPerfAsync(_perfLoop);
     }
 
     private void StopPerfLoop()
     {
+        if (_perfLoop is null)
+            return;
+
         _perfLoop?.Cancel();
-        _perfLoop?.Dispose();
-        _perfLoop = null;
     }
 
-    private async Task PollPerfAsync(CancellationToken cancellationToken)
+    private async Task PollPerfAsync(CancellationTokenSource source)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var cancellationToken = source.Token;
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(250, cancellationToken);
-                ApplyStats(await Renderer.GetStatsAsync());
-                ApplyEffectsStats(await Effects.GetStatsAsync());
+
+                var rendererStats = await Renderer.GetStatsAsync();
+                if (cancellationToken.IsCancellationRequested) return;
+                ApplyStats(rendererStats);
+
+                var effectsStats = await Effects.GetStatsAsync();
+                if (cancellationToken.IsCancellationRequested) return;
+                ApplyEffectsStats(effectsStats);
+
                 await InvokeAsync(StateHasChanged);
             }
-            catch (OperationCanceledException)
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (JSException ex)
+        {
+            _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
+            _showPerf = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
+            _showPerf = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            if (ReferenceEquals(_perfLoop, source))
             {
-                return;
+                _perfLoop = null;
+                _perfLoopTask = null;
             }
+
+            source.Dispose();
         }
     }
 
