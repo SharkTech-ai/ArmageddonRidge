@@ -46,7 +46,7 @@ let qualityCredit = 0;
 let writeIndex = 0;
 let radialWriteIndex = 0;
 let spawnCount = 0;
-let scheduledImpactId = 0;
+const scheduledImpactIds = new Set();
 let activeRadialCount = 0;
 let activeParticleCount = 0;
 let cachedParticleCount = 0;
@@ -666,10 +666,10 @@ function stopLoop() {
 }
 
 function clearScheduledImpact() {
-    if (scheduledImpactId) {
-        clearTimeout(scheduledImpactId);
-        scheduledImpactId = 0;
+    for (const id of scheduledImpactIds) {
+        clearTimeout(id);
     }
+    scheduledImpactIds.clear();
 }
 
 function frame(now) {
@@ -961,17 +961,35 @@ function spawnFlightEffects(payload) {
 
 function scheduleImpactEffects(payload) {
     clearScheduledImpact();
-    const delay = estimateImpactDelayMs(payload);
-    scheduledImpactId = setTimeout(() => {
-        scheduledImpactId = 0;
-        if (!enabled || !device) return;
-        beginSpawnBatch();
-        spawnImpactEffects(payload);
-        endSpawnBatch();
-    }, delay);
+    const explosions = payload?.explosions ?? [];
+    const finalDelay = estimateImpactDelayMs(payload);
+    scheduleImpactBatch(payload, explosions.filter(explosion => triggerIndexFor(explosion) < 0), finalDelay, true);
+
+    for (const explosion of explosions) {
+        if (triggerIndexFor(explosion) < 0) {
+            continue;
+        }
+
+        scheduleImpactBatch(payload, [explosion], estimateExplosionDelayMs(payload, explosion), false);
+    }
 }
 
-function estimateImpactDelayMs(payload) {
+function scheduleImpactBatch(payload, explosions, delay, includeShieldRipple) {
+    if (!explosions.length && !includeShieldRipple) {
+        return;
+    }
+
+    const id = setTimeout(() => {
+        scheduledImpactIds.delete(id);
+        if (!enabled || !device) return;
+        beginSpawnBatch();
+        spawnImpactEffects(payload, explosions, includeShieldRipple);
+        endSpawnBatch();
+    }, delay);
+    scheduledImpactIds.add(id);
+}
+
+export function estimateImpactDelayMs(payload) {
     const trailCount = Math.max(2, Number(payload?.trailPointCount ?? payload?.trail?.length ?? 2));
     const weaponId = normalized(payload?.weaponId);
     const visualKind = normalized(payload?.visualKind);
@@ -993,6 +1011,22 @@ function estimateImpactDelayMs(payload) {
     }
 
     return Math.max(80, Math.min(3400, visualDuration - 45));
+}
+
+export function estimateExplosionDelayMs(payload, explosion) {
+    const triggerIndex = triggerIndexFor(explosion);
+    if (triggerIndex < 0) {
+        return estimateImpactDelayMs(payload);
+    }
+
+    const trailCount = Math.max(2, Number(payload?.trailPointCount ?? payload?.trail?.length ?? 2));
+    const finalDelay = estimateImpactDelayMs(payload);
+    const triggerProgress = clamp(triggerIndex / Math.max(1, trailCount - 1), 0, 1);
+    return Math.max(80, Math.min(3400, finalDelay * triggerProgress));
+}
+
+function triggerIndexFor(explosion) {
+    return Number(payloadValue(explosion, "triggerIndex") ?? -1);
 }
 
 function startPatriotInterception(payload) {
@@ -1287,14 +1321,13 @@ function quadraticScalar(start, control, end, t) {
     return (inverse * inverse * start) + (2 * inverse * t * control) + (t * t * end);
 }
 
-function spawnImpactEffects(payload) {
-    const explosions = payload?.explosions ?? [];
+function spawnImpactEffects(payload, explosions = payload?.explosions ?? [], includeShieldRipple = true) {
     const wind = Number(payload?.wind ?? currentWind);
     for (const explosion of explosions) {
         spawnExplosion(explosion, payload, wind);
     }
 
-    if (payload?.shieldHit) {
+    if (includeShieldRipple && payload?.shieldHit) {
         spawnShieldRipple(payload);
     }
 }
