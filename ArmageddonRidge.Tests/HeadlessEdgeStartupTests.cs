@@ -64,6 +64,8 @@ public sealed class HeadlessEdgeStartupTests
 
         Assert.True(result.PerfOverlayClosed, "The FPS overlay did not close after clicking FPS a second time.");
         Assert.True(result.BrowserResponsiveAfterPerfClose, "The browser did not respond after closing the FPS overlay.");
+        Assert.True(result.FireButtonDisabledDuringShot, "The Fire button did not disable during player shot playback.");
+        Assert.True(result.PlayerTurnRecoveredAfterCpuCycle, "The browser did not recover to a player fireable state, or round-over state, after the CPU response.");
         Assert.Empty(result.ConsoleErrors);
         Assert.Empty(result.Exceptions);
         Assert.Empty(result.NetworkFailures);
@@ -315,6 +317,24 @@ public sealed class HeadlessEdgeStartupTests
                 browserResponsiveAfterPerfClose = await client.EvaluateBooleanAsync("(() => 21 * 2 === 42)()");
             }
 
+            var fireButtonDisabledDuringShot = false;
+            var playerTurnRecoveredAfterCpuCycle = false;
+            if (battleConsoleRendered)
+            {
+                await client.ClickSelectorAsync(".battle-console .console-fire");
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
+                fireButtonDisabledDuringShot = await client.EvaluateBooleanAsync("""
+                    Boolean(document.querySelector('.battle-console .console-fire')?.disabled)
+                    """);
+                playerTurnRecoveredAfterCpuCycle = await client.WaitForBooleanAsync("""
+                    (() => {
+                        const fire = document.querySelector('.battle-console .console-fire');
+                        if (fire && !fire.disabled) return true;
+                        return Boolean(document.querySelector('.modal-card'));
+                    })()
+                    """, TimeSpan.FromSeconds(14));
+            }
+
             return new BrowserSmokeResult(
                 gameRootRendered,
                 battlefieldRendered,
@@ -327,6 +347,8 @@ public sealed class HeadlessEdgeStartupTests
                 perfOverlayShowsWebGpuEffectsOff,
                 perfOverlayClosed,
                 browserResponsiveAfterPerfClose,
+                fireButtonDisabledDuringShot,
+                playerTurnRecoveredAfterCpuCycle,
                 options.DisableWebGpuEffects,
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
@@ -454,6 +476,8 @@ public sealed class HeadlessEdgeStartupTests
         bool PerfOverlayShowsWebGpuEffectsOff,
         bool PerfOverlayClosed,
         bool BrowserResponsiveAfterPerfClose,
+        bool FireButtonDisabledDuringShot,
+        bool PlayerTurnRecoveredAfterCpuCycle,
         bool ExpectedWebGpuEffectsDisabled,
         string[] ConsoleErrors,
         string[] Exceptions,
@@ -557,6 +581,20 @@ public sealed class HeadlessEdgeStartupTests
             if (!result.TryGetProperty("result", out var runtimeResult)) return string.Empty;
             if (!runtimeResult.TryGetProperty("value", out var value)) return string.Empty;
             return value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+        }
+
+        public async Task<bool> WaitForBooleanAsync(string expression, TimeSpan timeout)
+        {
+            var deadline = DateTimeOffset.UtcNow + timeout;
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                if (await EvaluateBooleanAsync(expression))
+                    return true;
+
+                await Task.Delay(250);
+            }
+
+            return false;
         }
 
         public async Task ClickButtonByTextAsync(string text)
