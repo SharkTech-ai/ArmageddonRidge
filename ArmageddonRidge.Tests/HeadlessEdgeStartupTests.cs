@@ -62,6 +62,9 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.CombatEventOverlayRendered, "The battle combat event overlay did not render the latest event.");
+        Assert.True(
+            result.CombatEventOverlayAvoidsControls,
+            $"The battle combat event overlay overlapped HUD, FPS, or battle controls.{Environment.NewLine}{result.CombatEventOverlayLayoutDiagnostics}");
         Assert.True(result.BattlefieldFpsButtonRendered, "The battlefield FPS button did not render after starting a duel.");
         Assert.True(result.BattlefieldFpsButtonShowsValue, "The battlefield FPS button did not show text like '58 FPS'.");
         Assert.True(result.BattleHudAndFpsStayInsideBattlefield, "The HUD or FPS button escaped the battlefield panel bounds.");
@@ -387,6 +390,48 @@ public sealed class HeadlessEdgeStartupTests
                         && text.startsWith('Round '));
                 })()
                 """);
+            var combatEventOverlayAvoidsControls = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const overlay = document.querySelector('.taunt')?.getBoundingClientRect();
+                    if (!overlay || overlay.width <= 0 || overlay.height <= 0) return false;
+                    if (overlay.left < 0 || overlay.top < 0 || overlay.right > window.innerWidth || overlay.bottom > window.innerHeight) return false;
+                    const overlaps = (a, b) => Boolean(a && b
+                        && a.left < b.right
+                        && a.right > b.left
+                        && a.top < b.bottom
+                        && a.bottom > b.top);
+                    const controls = ['.battle-hud', '.battlefield-fps-button', '.battle-console']
+                        .map(selector => document.querySelector(selector)?.getBoundingClientRect());
+                    return controls.every(rect => !overlaps(overlay, rect));
+                })()
+                """);
+            var combatEventOverlayLayoutDiagnostics = await client.EvaluateStringAsync("""
+                (() => {
+                    const read = selector => {
+                        const element = document.querySelector(selector);
+                        const rect = element?.getBoundingClientRect();
+                        return rect ? {
+                            selector,
+                            text: (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 90),
+                            left: Math.round(rect.left),
+                            top: Math.round(rect.top),
+                            right: Math.round(rect.right),
+                            bottom: Math.round(rect.bottom),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        } : { selector, missing: true };
+                    };
+                    return JSON.stringify({
+                        viewport: { width: window.innerWidth, height: window.innerHeight },
+                        elements: [
+                            read('.taunt'),
+                            read('.battle-hud'),
+                            read('.battlefield-fps-button'),
+                            read('.battle-console')
+                        ]
+                    });
+                })()
+                """);
             var battlefieldFpsButtonRendered = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.battlefield-fps-button'))");
             var battlefieldFpsButtonShowsValue = await client.EvaluateBooleanAsync("""
                 /^\d+ FPS$/.test(document.querySelector('.battlefield-fps-button')?.textContent?.trim() ?? '')
@@ -484,6 +529,8 @@ public sealed class HeadlessEdgeStartupTests
                 effectsCanvasRendered,
                 battleConsoleRendered,
                 combatEventOverlayRendered,
+                combatEventOverlayAvoidsControls,
+                combatEventOverlayLayoutDiagnostics,
                 battlefieldFpsButtonRendered,
                 battlefieldFpsButtonShowsValue,
                 battleHudAndFpsStayInsideBattlefield,
@@ -620,6 +667,8 @@ public sealed class HeadlessEdgeStartupTests
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
         bool CombatEventOverlayRendered,
+        bool CombatEventOverlayAvoidsControls,
+        string CombatEventOverlayLayoutDiagnostics,
         bool BattlefieldFpsButtonRendered,
         bool BattlefieldFpsButtonShowsValue,
         bool BattleHudAndFpsStayInsideBattlefield,

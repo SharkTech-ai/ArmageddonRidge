@@ -838,7 +838,7 @@ select {
 
 .taunt {
     right: 18px;
-    top: 18px;
+    top: 166px;
     max-width: min(360px, calc(100% - 36px));
     overflow-wrap: anywhere;
     font-size: 0.86rem;
@@ -1052,7 +1052,7 @@ pre {
     }
 
     .taunt {
-        top: 82px;
+        top: 142px;
         right: 8px;
         max-width: calc(100% - 16px);
         font-size: 0.74rem;
