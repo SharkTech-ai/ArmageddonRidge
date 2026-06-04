@@ -743,6 +743,27 @@ public sealed class GameEngineTests
         Assert.True(secondary.TerrainRadius > primary.TerrainRadius);
     }
 
+    [Theory]
+    [InlineData(WeaponIds.DarkEagle)]
+    [InlineData(WeaponIds.Gbu57Mop)]
+    public void SpecialWeaponTrailsStayFiniteWhenTanksOverlap(string weaponId)
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.Position = new Vector2(300, 620);
+        state.CpuTank.Position = state.PlayerTank.Position;
+        state.PlayerTank.AddWeapon(weaponId, 1);
+        state.SelectedWeaponId = weaponId;
+        engine.StartBattle(state);
+
+        var result = engine.FireCurrentTurn(state, settings, angle: 85, power: 1);
+
+        Assert.Equal(weaponId, result.WeaponId);
+        AssertFinite(result.Trail);
+        AssertFinite(result.Explosions.Select(static explosion => explosion.Center));
+    }
+
     [Fact]
     public void SplitterMirvProducesSevenSpreadImpacts()
     {
@@ -882,4 +903,13 @@ public sealed class GameEngineTests
     }
 
     private static GameEngine CreateEngine() => new(new WeaponCatalog(), new UpgradeCatalog());
+
+    private static void AssertFinite(IEnumerable<Vector2> points)
+    {
+        foreach (var point in points)
+        {
+            Assert.True(float.IsFinite(point.X), $"Expected finite X coordinate, got {point.X}.");
+            Assert.True(float.IsFinite(point.Y), $"Expected finite Y coordinate, got {point.Y}.");
+        }
+    }
 }

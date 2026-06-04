@@ -417,7 +417,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         if (direction.LengthSquared() < 0.001f)
             direction = new Vector2(owner.IsCpu ? -0.25f : 0.25f, 1f);
 
-        direction = Vector2.Normalize(new Vector2(direction.X * 0.35f, MathF.Max(MathF.Abs(direction.Y), 0.86f)));
+        direction = NormalizeOrFallback(
+            new Vector2(direction.X * 0.35f, MathF.Max(MathF.Abs(direction.Y), 0.86f)),
+            new Vector2(owner.IsCpu ? -0.25f : 0.25f, 1f));
         const int burrowSteps = 12;
         var burrowDistance = Math.Clamp(weapon.TerrainRadius * 0.72f, 42f, 86f);
         for (var i = 1; i <= burrowSteps; i++)
@@ -483,7 +485,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         var delta = opponent.Center - owner.Center;
         if (delta.LengthSquared() <= 0.001f) return owner.Center;
 
-        return ClampToWorld(owner.Center + (Vector2.Normalize(delta) * 32f));
+        return ClampToWorld(owner.Center + (NormalizeOrFallback(delta, new Vector2(owner.IsCpu ? -1f : 1f, 0f)) * 32f));
     }
 
     private static Vector2 RefineTerrainHit(TerrainMask terrain, Vector2 clear, Vector2 solid)
@@ -511,7 +513,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         if (direction.LengthSquared() < 0.001f)
             direction = new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f);
 
-        direction = Vector2.Normalize(new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)));
+        direction = NormalizeOrFallback(
+            new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)),
+            new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f));
         var firstTriggerIndex = Math.Max(0, trail.Count - 1);
         const int burrowSteps = 18;
         const float burrowDistance = 96f;
@@ -579,6 +583,18 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     private static Vector2 ClampToWorld(Vector2 point) => new(
         Math.Clamp(point.X, 0, GameConstants.WorldWidth - 1),
         Math.Clamp(point.Y, 0, GameConstants.WorldHeight - 1));
+
+    private static Vector2 NormalizeOrFallback(Vector2 vector, Vector2 fallback)
+    {
+        var lengthSquared = vector.LengthSquared();
+        if (float.IsFinite(lengthSquared) && lengthSquared > 0.0001f)
+            return Vector2.Normalize(vector);
+
+        var fallbackLengthSquared = fallback.LengthSquared();
+        return float.IsFinite(fallbackLengthSquared) && fallbackLengthSquared > 0.0001f
+            ? Vector2.Normalize(fallback)
+            : Vector2.UnitX;
+    }
 
     private static Vector2 GuidedLaunchPoint(Tank tank)
     {
