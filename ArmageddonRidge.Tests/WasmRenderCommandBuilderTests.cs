@@ -129,6 +129,43 @@ public sealed class WasmRenderCommandBuilderTests
             && command.Fill?.Contains("214,196,170", StringComparison.Ordinal) == true);
     }
 
+    [Fact]
+    public void FullWasmFallbackDoesNotEmitNonFiniteCommands()
+    {
+        var builder = new WasmRenderCommandBuilder();
+        var terrain = Enumerable.Repeat(620f, GameConstants.WorldWidth).ToArray();
+        terrain[16] = float.NaN;
+        terrain[32] = float.PositiveInfinity;
+        var scene = EmptyScene() with
+        {
+            Terrain = terrain,
+            Radiation =
+            [
+                new RenderRadiationZone(float.NaN, 100, 30, 2, "Lava", true),
+                new RenderRadiationZone(120, 120, 24, 2, "Lava", true)
+            ],
+            Player = new RenderTank("player", float.NaN, 620, 45, 75, 0, false, 620, 0),
+            Cpu = new RenderTank("cpu", 1040, 620, 135, 75, 0, true, 620, 0)
+        };
+
+        var frame = builder.BuildFrame(
+            scene,
+            [new RenderPoint(float.NaN, 90), new RenderPoint(100, 100), new RenderPoint(110, 110)],
+            [
+                new WasmExplosion(float.NaN, 100, 42, 35, false, false, "Laser", -1),
+                new WasmExplosion(120, 120, 42, 35, false, false, "Laser", -1)
+            ],
+            progress: 1);
+
+        foreach (var command in frame.Commands)
+        {
+            AssertCommandIsFinite(command);
+        }
+
+        Assert.DoesNotContain(frame.Commands, command => command.X == 0 && command.Y == 0 && command.Fill == "#50c5b7");
+        Assert.Contains(frame.Commands, command => command.X == 120 && command.Y == 120 && command.Fill?.Contains("123,243,255", StringComparison.Ordinal) == true);
+    }
+
     private static RenderScene EmptyScene()
     {
         var terrain = Enumerable.Repeat(620f, GameConstants.WorldWidth).ToArray();
@@ -160,4 +197,26 @@ public sealed class WasmRenderCommandBuilderTests
 
         return command.X == 100 && Math.Abs(command.Y - 100) <= 24;
     }
+
+    private static void AssertCommandIsFinite(RenderCommand command)
+    {
+        AssertFinite(command.X);
+        AssertFinite(command.Y);
+        AssertFinite(command.X2);
+        AssertFinite(command.Y2);
+        AssertFinite(command.W);
+        AssertFinite(command.H);
+        AssertFinite(command.R);
+        AssertFinite(command.LineWidth);
+        AssertFinite(command.Alpha);
+
+        if (command.Points is null) return;
+        foreach (var point in command.Points)
+        {
+            AssertFinite(point);
+        }
+    }
+
+    private static void AssertFinite(float value) =>
+        Assert.True(float.IsFinite(value), $"Expected finite render command value, got {value}.");
 }
