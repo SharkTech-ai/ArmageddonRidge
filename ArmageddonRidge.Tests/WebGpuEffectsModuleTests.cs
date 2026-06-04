@@ -63,6 +63,60 @@ public sealed class WebGpuEffectsModuleTests
             $"WebGPU impact timing smoke failed with exit code {process.ExitCode}.{Environment.NewLine}{output}{Environment.NewLine}{error}");
     }
 
+    [Fact]
+    public async Task WebGpuImpactTimingHonorsSpecialWeaponIds()
+    {
+        var repoRoot = FindRepoRoot();
+        var modulePath = Path.GetFullPath(Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "js", "webGpuEffectsRenderer.js"));
+        var moduleUri = new Uri(modulePath).AbsoluteUri;
+        var script = $$"""
+            const effects = await import({{JsonSerializer.Serialize(moduleUri)}});
+            const payload = (weaponId, trailPointCount = 100, extra = {}) => ({
+                weaponId,
+                visualKind: extra.visualKind ?? '',
+                trailPointCount,
+                trail: Array.from({ length: trailPointCount }, (_, index) => ({ x: index, y: index })),
+                explosions: [{ x: 80, y: 80, radius: extra.radius ?? 42, terrainRadius: extra.terrainRadius ?? 60 }],
+                ...extra
+            });
+            const checks = [
+                ['dark eagle fixed timing', effects.estimateImpactDelayMs(payload('dark-eagle', 40)) === 2855],
+                ['shahed long swarm timing', effects.estimateImpactDelayMs(payload('shahed-drone-swarm', 200)) === 2555],
+                ['mirv cluster timing', effects.estimateImpactDelayMs(payload('splitter-mirv', 200)) === 1055],
+                ['mop dramatic timing', effects.estimateImpactDelayMs(payload('gbu-57-mop', 200)) === 1655],
+                ['nuke default timing', effects.estimateImpactDelayMs(payload('tactical-nuke', 200, { visualKind: 'Nuclear' })) === 755],
+                ['patriot intercept clamps long', effects.estimateImpactDelayMs(payload('dark-eagle', 40, { intercepted: true })) === 3355]
+            ];
+            const failed = checks.filter(([, ok]) => !ok).map(([name]) => name);
+            if (failed.length) {
+                throw new Error(`WebGPU special weapon timing checks failed: ${failed.join(', ')}`);
+            }
+            """;
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "node",
+                ArgumentList = { "--input-type=module", "--eval", script },
+                WorkingDirectory = repoRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        Assert.True(process.Start(), "Failed to start node for WebGPU special weapon timing smoke.");
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.True(
+            process.ExitCode == 0,
+            $"WebGPU special weapon timing smoke failed with exit code {process.ExitCode}.{Environment.NewLine}{output}{Environment.NewLine}{error}");
+    }
+
     private static string FindRepoRoot()
     {
         var dir = AppContext.BaseDirectory;

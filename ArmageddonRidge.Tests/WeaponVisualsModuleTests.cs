@@ -15,12 +15,22 @@ public sealed class WeaponVisualsModuleTests
             const visuals = await import({{JsonSerializer.Serialize(moduleUri)}});
             const checks = [
                 ['drone visual kind', visuals.isDroneWeapon(undefined, 'DroneSwarm')],
+                ['drone weapon id', visuals.isDroneWeapon('shahed-drone-swarm')],
+                ['Dark Eagle weapon id', visuals.isDarkEagleWeapon('dark-eagle')],
+                ['MIRV weapon id', visuals.isMirvWeapon('splitter-mirv')],
                 ['MOP visual kind', visuals.isMopWeapon(undefined, 'PenetratorSecondary')],
+                ['MOP weapon id', visuals.isMopWeapon('gbu-57-mop')],
                 ['napalm visual kind', visuals.isNapalmWeapon(undefined, 'Fire')],
+                ['napalm weapon id', visuals.isNapalmWeapon('napalm-flask')],
                 ['lava explosion visual kind', visuals.isLavaExplosion({ visualKind: 'Lava' })],
+                ['laser weapon id', visuals.isLaserWeapon('laser-lance')],
+                ['laser explosion weapon id', visuals.isLaserExplosion({ weaponId: 'laser-lance' })],
                 ['nuclear missile visual kind', visuals.isMissileWeapon(undefined, 'Nuclear')],
+                ['nuclear weapon id', visuals.isMissileWeapon('tactical-nuke')],
                 ['patriot visual kind', visuals.isPatriotExplosion({ visualKind: 'PatriotIntercept' })],
-                ['shield visual kind', visuals.isShieldHitExplosion({ visualKind: 'ShieldHit' })]
+                ['shield visual kind', visuals.isShieldHitExplosion({ visualKind: 'ShieldHit' })],
+                ['shield is not patriot', !visuals.isShieldHitExplosion({ visualKind: 'PatriotIntercept' })],
+                ['penetrator weapon id', visuals.isPenetratorExplosion({ weaponId: 'gbu-57-mop' })]
             ];
             const failed = checks.filter(([, ok]) => !ok).map(([name]) => name);
             if (failed.length) {
