@@ -83,6 +83,9 @@ public sealed class HeadlessEdgeStartupTests
         }
 
         Assert.True(result.PerfOverlayOpened, "The FPS overlay did not open after clicking FPS.");
+        Assert.True(
+            result.PerfOverlayStaysUsable,
+            $"The FPS overlay covered the FPS toggle or rendered outside the viewport.{Environment.NewLine}{result.PerfOverlayLayoutDiagnostics}");
         if (result.ExpectedWebGpuEffectsDisabled)
         {
             Assert.True(result.PerfOverlayShowsWebGpuEffectsOff, "The FPS overlay did not report 'FX: Off' after disabling WebGPU effects.");
@@ -567,12 +570,55 @@ public sealed class HeadlessEdgeStartupTests
             var perfOverlayClosed = false;
             var perfOverlayShowsWebGpuEffectsOff = false;
             var perfOverlayShowsFullWasmMode = false;
+            var perfOverlayStaysUsable = false;
+            var perfOverlayLayoutDiagnostics = string.Empty;
             var browserResponsiveAfterPerfClose = false;
             if (battlefieldFpsButtonRendered)
             {
                 await client.ClickSelectorAsync(".battlefield-fps-button");
                 await Task.Delay(TimeSpan.FromMilliseconds(650));
                 perfOverlayOpened = await client.EvaluateBooleanAsync("Boolean(document.querySelector('.perf-overlay'))");
+                perfOverlayStaysUsable = await client.EvaluateBooleanAsync("""
+                    (() => {
+                        const overlay = document.querySelector('.perf-overlay')?.getBoundingClientRect();
+                        const button = document.querySelector('.battlefield-fps-button')?.getBoundingClientRect();
+                        if (!overlay || !button) return false;
+                        const insideViewport = overlay.width > 0
+                            && overlay.height > 0
+                            && overlay.left >= 0
+                            && overlay.top >= 0
+                            && overlay.right <= window.innerWidth
+                            && overlay.bottom <= window.innerHeight;
+                        const overlapsButton = overlay.left < button.right
+                            && overlay.right > button.left
+                            && overlay.top < button.bottom
+                            && overlay.bottom > button.top;
+                        return insideViewport && !overlapsButton;
+                    })()
+                    """);
+                perfOverlayLayoutDiagnostics = await client.EvaluateStringAsync("""
+                    (() => {
+                        const read = selector => {
+                            const element = document.querySelector(selector);
+                            const rect = element?.getBoundingClientRect();
+                            return rect ? {
+                                selector,
+                                text: (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                                left: Math.round(rect.left),
+                                top: Math.round(rect.top),
+                                right: Math.round(rect.right),
+                                bottom: Math.round(rect.bottom),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height)
+                            } : { selector, missing: true };
+                        };
+                        return JSON.stringify({
+                            viewport: { width: window.innerWidth, height: window.innerHeight },
+                            overlay: read('.perf-overlay'),
+                            fps: read('.battlefield-fps-button')
+                        });
+                    })()
+                    """);
                 perfOverlayShowsWebGpuEffectsOff = await client.EvaluateBooleanAsync("""
                     Array.from(document.querySelectorAll('.perf-overlay span'))
                         .some(span => span.textContent?.trim() === 'FX: Off')
@@ -654,6 +700,8 @@ public sealed class HeadlessEdgeStartupTests
                 battleConsoleAvoidsExpectedCanvasOverlap,
                 battlefieldCanvasChangedAfterAmbientTick,
                 perfOverlayOpened,
+                perfOverlayStaysUsable,
+                perfOverlayLayoutDiagnostics,
                 perfOverlayShowsWebGpuEffectsOff,
                 perfOverlayShowsFullWasmMode,
                 perfOverlayClosed,
@@ -800,6 +848,8 @@ public sealed class HeadlessEdgeStartupTests
         bool BattleConsoleAvoidsExpectedCanvasOverlap,
         bool BattlefieldCanvasChangedAfterAmbientTick,
         bool PerfOverlayOpened,
+        bool PerfOverlayStaysUsable,
+        string PerfOverlayLayoutDiagnostics,
         bool PerfOverlayShowsWebGpuEffectsOff,
         bool PerfOverlayShowsFullWasmMode,
         bool PerfOverlayClosed,
