@@ -122,6 +122,13 @@ public sealed class Tank
     /// </summary>
     public void AddWeapon(string weaponId, int count)
     {
+        if (count <= 0)
+        {
+            if (weaponId == WeaponIds.PeaShell) return;
+
+            throw new ArgumentOutOfRangeException(nameof(count), "Weapon count must be positive.");
+        }
+
         if (!Inventory.TryAdd(weaponId, count)) Inventory[weaponId] += count;
     }
 
