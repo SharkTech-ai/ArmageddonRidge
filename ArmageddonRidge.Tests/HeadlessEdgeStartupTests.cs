@@ -62,8 +62,11 @@ public sealed class HeadlessEdgeStartupTests
         Assert.True(result.EffectsCanvasRendered, "The WebGPU effects overlay canvas did not render after starting a duel.");
         Assert.True(result.BattleConsoleRendered, "The bottom battle console did not render after starting a duel.");
         Assert.True(result.ShopPurchaseSucceeded, "The shop did not allow buying a Heavy Shell before battle.");
+        Assert.True(result.DroneSwarmPurchaseSucceeded, "The shop did not allow buying a Shahed Drone Swarm before battle.");
+        Assert.True(result.DroneSwarmSelectable, "The purchased Shahed Drone Swarm was not available in the battle weapon selector.");
         Assert.True(result.PurchasedWeaponSelectable, "The purchased Heavy Shell was not available in the battle weapon selector.");
         Assert.True(result.PurchasedWeaponSelectionShowsInventory, "Selecting the purchased Heavy Shell did not show its inventory count.");
+        Assert.True(result.DroneSwarmReselectedForPlayback, "The Shahed Drone Swarm could not be reselected for browser smoke shot playback.");
         Assert.True(result.CombatEventOverlayRendered, "The battle combat event overlay did not render the latest event.");
         Assert.True(
             result.CombatEventOverlayAvoidsControls,
@@ -373,6 +376,22 @@ public sealed class HeadlessEdgeStartupTests
                     """);
                 if (shopStartVisible)
                 {
+                    var clickedDroneSwarmBuy = await client.EvaluateBooleanAsync("""
+                        (() => {
+                            const item = Array.from(document.querySelectorAll('.shop-item'))
+                                .find(candidate => candidate.querySelector('strong')?.textContent?.trim() === 'Shahed Drone Swarm');
+                            const button = item?.querySelector('button');
+                            if (!button || button.disabled) return false;
+                            button.click();
+                            return true;
+                        })()
+                        """);
+                    if (!clickedDroneSwarmBuy)
+                    {
+                        throw new InvalidOperationException("Could not buy Shahed Drone Swarm during browser smoke shop setup.");
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(350));
                     var clickedHeavyShellBuy = await client.EvaluateBooleanAsync("""
                         (() => {
                             const item = Array.from(document.querySelectorAll('.shop-item'))
@@ -401,6 +420,19 @@ public sealed class HeadlessEdgeStartupTests
                 Array.from(document.querySelectorAll('.battle-console select option'))
                     .some(option => option.value === 'heavy-shell' && option.textContent?.includes('(1)'))
                 """);
+            var droneSwarmPurchaseSucceeded = await client.EvaluateBooleanAsync("""
+                Array.from(document.querySelectorAll('.battle-console select option'))
+                    .some(option => option.value === 'shahed-drone-swarm' && option.textContent?.includes('(1)'))
+                """);
+            var droneSwarmSelectable = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const select = document.querySelector('.battle-console select');
+                    if (!select || !Array.from(select.options).some(option => option.value === 'shahed-drone-swarm')) return false;
+                    select.value = 'shahed-drone-swarm';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return select.value === 'shahed-drone-swarm';
+                })()
+                """);
             var purchasedWeaponSelectable = await client.EvaluateBooleanAsync("""
                 (() => {
                     const select = document.querySelector('.battle-console select');
@@ -413,6 +445,15 @@ public sealed class HeadlessEdgeStartupTests
             var purchasedWeaponSelectionShowsInventory = await client.WaitForBooleanAsync("""
                 document.querySelector('.console-weapon strong')?.textContent?.trim() === '1'
                 """, TimeSpan.FromSeconds(5));
+            var droneSwarmReselectedForPlayback = await client.EvaluateBooleanAsync("""
+                (() => {
+                    const select = document.querySelector('.battle-console select');
+                    if (!select || !Array.from(select.options).some(option => option.value === 'shahed-drone-swarm')) return false;
+                    select.value = 'shahed-drone-swarm';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return select.value === 'shahed-drone-swarm';
+                })()
+                """);
             var combatEventOverlayRendered = await client.EvaluateBooleanAsync("""
                 (() => {
                     const overlay = document.querySelector('.taunt');
@@ -592,8 +633,11 @@ public sealed class HeadlessEdgeStartupTests
                 effectsCanvasRendered,
                 battleConsoleRendered,
                 shopPurchaseSucceeded,
+                droneSwarmPurchaseSucceeded,
+                droneSwarmSelectable,
                 purchasedWeaponSelectable,
                 purchasedWeaponSelectionShowsInventory,
+                droneSwarmReselectedForPlayback,
                 combatEventOverlayRendered,
                 combatEventOverlayAvoidsControls,
                 combatEventOverlayLayoutDiagnostics,
@@ -734,8 +778,11 @@ public sealed class HeadlessEdgeStartupTests
         bool EffectsCanvasRendered,
         bool BattleConsoleRendered,
         bool ShopPurchaseSucceeded,
+        bool DroneSwarmPurchaseSucceeded,
+        bool DroneSwarmSelectable,
         bool PurchasedWeaponSelectable,
         bool PurchasedWeaponSelectionShowsInventory,
+        bool DroneSwarmReselectedForPlayback,
         bool CombatEventOverlayRendered,
         bool CombatEventOverlayAvoidsControls,
         string CombatEventOverlayLayoutDiagnostics,

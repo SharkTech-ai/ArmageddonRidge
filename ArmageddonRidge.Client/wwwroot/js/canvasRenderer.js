@@ -34,6 +34,7 @@ const activeShotCompletes = new Set();
 let lastAmbientRedraw = 0;
 let shotInProgress = false;
 const spriteManifestVersion = "2026-05-04-genesis-v7";
+const dronePointCaches = Array.from({ length: 5 }, () => []);
 const ambientRedrawIntervalMs = 1000 / 30;
 const patriotInterceptDurationScale = 2.6;
 const patriotInterceptMinDuration = 2900;
@@ -1896,7 +1897,7 @@ function drawPatriotInterceptGuide(apexX, apexY, endX, endY, launchProgress, now
 }
 
 function drawDroneSwarmTrail(points, count, weaponId) {
-    const droneCount = 5;
+    const droneCount = dronePointCaches.length;
     const visibleCount = Math.min(points.length, count);
     if (visibleCount <= 0) {
         return;
@@ -1908,7 +1909,7 @@ function drawDroneSwarmTrail(points, count, weaponId) {
         const startIndex = Math.max(0, headIndex - 92);
         const phase = drone * 1.73;
         const spin = droneSpinDirection(drone, points.length);
-        const pointCache = [];
+        const pointCache = dronePointCaches[drone];
         ctx.fillStyle = drone % 2 === 0 ? "rgba(255, 231, 139, 0.7)" : "rgba(126, 226, 213, 0.62)";
 
         for (let i = startIndex; i <= headIndex; i += 6) {
@@ -1933,14 +1934,15 @@ function drawDroneSwarmTrail(points, count, weaponId) {
 function cachedDronePoint(cache, points, index, drone, phase, spin) {
     let point = cache[index];
     if (!point) {
-        point = dronePoint(points, index, drone, phase, spin);
+        point = { x: 0, y: 0 };
         cache[index] = point;
     }
 
+    writeDronePoint(point, points, index, drone, phase, spin);
     return point;
 }
 
-function dronePoint(points, index, drone, phase, spin) {
+function writeDronePoint(target, points, index, drone, phase, spin) {
     const point = points[index];
     const prev = points[Math.max(0, index - 3)] ?? point;
     const next = points[Math.min(points.length - 1, index + 3)] ?? point;
@@ -1957,10 +1959,8 @@ function dronePoint(points, index, drone, phase, spin) {
     const swirl = Math.sin((index * wanderRate) + phase) * (16 + (drone % 3) * 3.5);
     const corkscrew = Math.cos((index * counterRate) + phase * 1.9) * (4 + (drone % 2) * 2);
     const offset = (lane * 9) + swirl + Math.sin(index * 0.045 + phase * 2.2) * 6;
-    return {
-        x: point.x + (normalX * offset) + (tangentX * corkscrew),
-        y: point.y + (normalY * offset) + (tangentY * corkscrew)
-    };
+    target.x = point.x + (normalX * offset) + (tangentX * corkscrew);
+    target.y = point.y + (normalY * offset) + (tangentY * corkscrew);
 }
 
 function droneSpinDirection(drone, seed) {
