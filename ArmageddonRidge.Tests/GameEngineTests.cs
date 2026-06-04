@@ -78,6 +78,22 @@ public sealed class GameEngineTests
         Assert.Equal(1, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void BuyingNonPositiveWeaponCountDoesNotChangeCashOrInventory(int count)
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123));
+        var before = state.PlayerTank.Cash;
+
+        var bought = engine.BuyWeapon(state, WeaponIds.HeavyShell, count);
+
+        Assert.False(bought);
+        Assert.Equal(before, state.PlayerTank.Cash);
+        Assert.Equal(0, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
+    }
+
     [Fact]
     public void StartBattleLogsRoundStartEvent()
     {

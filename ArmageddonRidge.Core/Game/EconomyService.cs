@@ -18,11 +18,13 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
     /// </summary>
     public bool BuyWeapon(Tank tank, string weaponId, int count = 1)
     {
+        if (count <= 0) return false;
+
         var weapon = _weapons.Get(weaponId);
-        var total = weapon.Cost * count;
+        var total = (long)weapon.Cost * count;
         if (weapon.Cost <= 0 || tank.Cash < total) return false;
 
-        tank.Cash -= total;
+        tank.Cash -= (int)total;
         tank.AddWeapon(weaponId, count);
         return true;
     }
