@@ -20,6 +20,39 @@ internal static class RenderPayloadSanitizer
         return payload.ToArray();
     }
 
+    public static RenderPoint[] BuildRenderTrailPayload(IReadOnlyList<Vector2> trail, int maxPoints)
+    {
+        if (maxPoints < 2 || trail.Count < 2) return [];
+
+        var finite = new List<Vector2>(trail.Count);
+        for (var i = 0; i < trail.Count; i++)
+        {
+            var point = trail[i];
+            if (IsFinite(point.X, point.Y))
+            {
+                finite.Add(point);
+            }
+        }
+
+        if (finite.Count < 2) return [];
+        if (finite.Count <= maxPoints)
+        {
+            var points = new RenderPoint[finite.Count];
+            for (var i = 0; i < finite.Count; i++) points[i] = RenderPoint.FromVector(finite[i]);
+            return points;
+        }
+
+        var result = new RenderPoint[maxPoints];
+        var stride = (finite.Count - 1) / (float)(maxPoints - 1);
+        for (var i = 0; i < maxPoints; i++)
+        {
+            var point = finite[Math.Min(finite.Count - 1, (int)MathF.Round(i * stride))];
+            result[i] = RenderPoint.FromVector(point);
+        }
+
+        return result;
+    }
+
     public static ShotExplosionPayload[] BuildExplosionPayload(
         IReadOnlyList<ExplosionResult> explosions,
         string? weaponId)

@@ -57,6 +57,32 @@ public sealed class HybridCanvasRenderPayloadTests
         Assert.Null(options.interceptX);
         Assert.Null(options.interceptY);
     }
+
+    [Fact]
+    public void RenderTrailPayloadDropsNonFiniteTracerPointsBeforeSceneInterop()
+    {
+        var trail = new[]
+        {
+            new Vector2(float.NaN, 10),
+            new Vector2(0, 20),
+            new Vector2(10, 25),
+            new Vector2(20, float.NegativeInfinity),
+            new Vector2(30, 35),
+            new Vector2(40, 45)
+        };
+
+        var payload = RenderPayloadSanitizer.BuildRenderTrailPayload(trail, maxPoints: 3);
+        var invalidPayload = RenderPayloadSanitizer.BuildRenderTrailPayload(
+            [new Vector2(float.NaN, 10), new Vector2(20, float.PositiveInfinity)],
+            maxPoints: 3);
+
+        Assert.Collection(
+            payload,
+            point => Assert.Equal(new RenderPoint(0, 20), point),
+            point => Assert.Equal(new RenderPoint(30, 35), point),
+            point => Assert.Equal(new RenderPoint(40, 45), point));
+        Assert.Empty(invalidPayload);
+    }
 }
 
 file static class ShotExplosionPayloadTestExtensions

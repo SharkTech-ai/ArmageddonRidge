@@ -703,7 +703,10 @@ public partial class Home
         var capacity = TracerTrailCapacity;
         if (capacity <= 0 || trail.Count < 2) return;
 
-        _tracerTrails.Add(WasmRenderCommandBuilder.DownsampleTrailScalar(trail, 96));
+        var payload = RenderPayloadSanitizer.BuildRenderTrailPayload(trail, 96);
+        if (payload.Length < 2) return;
+
+        _tracerTrails.Add(payload);
         while (_tracerTrails.Count > capacity)
         {
             _tracerTrails.RemoveAt(0);
