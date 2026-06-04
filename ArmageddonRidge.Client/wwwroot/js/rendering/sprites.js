@@ -1,6 +1,7 @@
 let getContext = () => undefined;
 let atlas;
 let extraSprites = {};
+let extraSpriteFrames = {};
 let manifest;
 let frames = {};
 
@@ -9,7 +10,7 @@ export function configureSprites(contextProvider) {
 }
 
 export function spriteFrame(name) {
-    return frames[name];
+    return frames[name] ?? extraSpriteFrames[name];
 }
 
 export function hasSprite(name) {
@@ -25,6 +26,17 @@ export function drawExtraSprite(name, x, y, width, height) {
     }
 
     ctx.drawImage(sprite, x, y, width, height);
+}
+
+export function drawExtraSpriteByHeight(name, centerX, centerY, height) {
+    const frame = extraSpriteFrames[name];
+    if (!frame) {
+        drawExtraSprite(name, centerX - height, centerY - height * 0.5, height * 2, height);
+        return;
+    }
+
+    const width = height * frame.aspect;
+    drawExtraSprite(name, centerX - width * 0.5, centerY - height * 0.5, width, height);
 }
 
 export function drawSprite(name, x, y, width, height) {
@@ -78,6 +90,7 @@ export async function loadSprites(version) {
     }
 
     extraSprites = {};
+    extraSpriteFrames = {};
     await Promise.allSettled([
         loadExtraSprite("shahedDrone", "assets/sprites/shahed-drone.png", version),
         loadExtraSprite("gbu57Mop", "assets/sprites/gbu-57-mop.png", version),
@@ -113,7 +126,17 @@ function buildFrameCache(sourceFrames = {}) {
 }
 
 async function loadExtraSprite(name, url, version) {
-    extraSprites[name] = await loadImage(cacheBustedUrl(url, version));
+    const image = await loadImage(cacheBustedUrl(url, version));
+    extraSprites[name] = image;
+    extraSpriteFrames[name] = {
+        x: 0,
+        y: 0,
+        w: image.naturalWidth || image.width || 1,
+        h: image.naturalHeight || image.height || 1,
+        aspect: (image.naturalHeight || image.height || 1) > 0
+            ? (image.naturalWidth || image.width || 1) / (image.naturalHeight || image.height || 1)
+            : 1
+    };
 }
 
 function loadImage(url) {

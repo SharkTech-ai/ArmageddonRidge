@@ -1,5 +1,5 @@
 import { clamp, clamp01, hash2d, positiveModulo, quadraticScalar } from "./rendering/math.js";
-import { configureSprites, drawExtraSprite, drawOrientedSprite, drawSprite, drawSpriteFacing, hasSprite, loadSprites, spriteFrame } from "./rendering/sprites.js";
+import { configureSprites, drawExtraSprite, drawExtraSpriteByHeight, drawOrientedSprite, drawSprite, drawSpriteFacing, hasSprite, loadSprites, spriteFrame } from "./rendering/sprites.js";
 import {
     isDarkEagleWeapon,
     isDroneWeapon,
@@ -1980,7 +1980,7 @@ function drawShahedDrone(x, y, angle, weaponId, scale = 1) {
         ctx.ellipse(0, 3, 25, 10, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        drawExtraSprite("shahedDrone", -24, -12, 48, 24);
+        drawExtraSpriteByHeight("shahedDrone", 0, 0, 24);
         ctx.restore();
         return;
     }
@@ -2046,7 +2046,7 @@ function drawMopProjectile(last, prev) {
     ctx.translate(last.x, last.y);
     ctx.rotate(angle);
     if (hasSprite("gbu57Mop")) {
-        drawExtraSprite("gbu57Mop", -39, -15, 78, 30);
+        drawExtraSpriteByHeight("gbu57Mop", 0, 0, 30);
         ctx.restore();
         return;
     }
