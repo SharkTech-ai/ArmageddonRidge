@@ -75,8 +75,23 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
     public void AwardRound(GameState state, TurnOwner winner)
     {
         var playerWon = winner == TurnOwner.Player;
-        state.PlayerTank.Cash += playerWon ? GameConstants.WinReward + GameConstants.KillBonus : GameConstants.LossConsolation;
-        var hitReward = (int)MathF.Floor(state.DamageDealtByPlayer / 10f) * 10;
-        state.PlayerTank.Cash += hitReward;
+        AddCash(state.PlayerTank, playerWon ? GameConstants.WinReward + GameConstants.KillBonus : GameConstants.LossConsolation);
+        AddCash(state.PlayerTank, DamageReward(state.DamageDealtByPlayer));
+    }
+
+    private static int DamageReward(float damageDealt)
+    {
+        if (!float.IsFinite(damageDealt) || damageDealt <= 0) return 0;
+
+        var reward = MathF.Floor(damageDealt / 10f) * 10f;
+        return reward >= int.MaxValue ? int.MaxValue : (int)reward;
+    }
+
+    private static void AddCash(Tank tank, int amount)
+    {
+        if (amount <= 0) return;
+
+        var next = (long)tank.Cash + amount;
+        tank.Cash = next >= int.MaxValue ? int.MaxValue : (int)next;
     }
 }

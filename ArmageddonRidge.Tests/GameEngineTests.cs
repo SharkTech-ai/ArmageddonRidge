@@ -110,6 +110,31 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void RoundRewardCapsCashAtMaximumInsteadOfOverflowing()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123, StartingCash: int.MaxValue - 10));
+        state.DamageDealtByPlayer = float.MaxValue;
+
+        engine.Economy.AwardRound(state, TurnOwner.Player);
+
+        Assert.Equal(int.MaxValue, state.PlayerTank.Cash);
+    }
+
+    [Fact]
+    public void NegativeDamageRewardDoesNotReduceCash()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123));
+        state.DamageDealtByPlayer = -100;
+        var before = state.PlayerTank.Cash;
+
+        engine.Economy.AwardRound(state, TurnOwner.Cpu);
+
+        Assert.Equal(before + GameConstants.LossConsolation, state.PlayerTank.Cash);
+    }
+
+    [Fact]
     public void StartBattleLogsRoundStartEvent()
     {
         var engine = CreateEngine();
