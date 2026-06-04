@@ -71,36 +71,9 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
     {
         if (_module is null) return;
 
-        var trailPayload = new object[trail.Count];
-        for (var i = 0; i < trail.Count; i++)
-        {
-            var point = trail[i];
-            trailPayload[i] = new { x = point.X, y = point.Y };
-        }
-
-        var explosionPayload = new object[explosions.Count];
-        for (var i = 0; i < explosions.Count; i++)
-        {
-            var explosion = explosions[i];
-            explosionPayload[i] = new
-            {
-                x = explosion.Center.X,
-                y = explosion.Center.Y,
-                radius = explosion.DamageRadius,
-                terrainRadius = explosion.TerrainRadius,
-                nuclear = explosion.Nuclear,
-                dirt = explosion.DirtAdded,
-                weaponId,
-                visualKind = explosion.VisualKind.ToString(),
-                napalm = explosion.VisualKind == ShotVisualKind.Fire,
-                lava = explosion.VisualKind == ShotVisualKind.Lava,
-                missile = explosion.VisualKind == ShotVisualKind.Missile,
-                drone = explosion.VisualKind == ShotVisualKind.DroneSwarm,
-                patriotIntercept = explosion.VisualKind == ShotVisualKind.PatriotIntercept,
-                shieldHit = explosion.VisualKind == ShotVisualKind.ShieldHit,
-                triggerIndex = explosion.TriggerTrailIndex
-            };
-        }
+        var trailPayload = RenderPayloadSanitizer.BuildTrailPayload(trail);
+        var explosionPayload = RenderPayloadSanitizer.BuildExplosionPayload(explosions, weaponId);
+        var playbackOptions = RenderPayloadSanitizer.BuildPlaybackOptions(intercepted, interceptPoint, ownerTankId, visualKind);
 
         await _module.InvokeVoidAsync(
             "playShot",
@@ -109,13 +82,6 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
             explosionPayload,
             screenShake,
             weaponId,
-            new
-            {
-                intercepted,
-                interceptX = interceptPoint?.X,
-                interceptY = interceptPoint?.Y,
-                ownerTankId,
-                visualKind
-            });
+            playbackOptions);
     }
 }

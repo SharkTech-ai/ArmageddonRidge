@@ -1,0 +1,108 @@
+using System.Numerics;
+using ArmageddonRidge.Core.Models;
+
+namespace ArmageddonRidge.Client.Services.Rendering;
+
+internal static class RenderPayloadSanitizer
+{
+    public static ShotPointPayload[] BuildTrailPayload(IReadOnlyList<Vector2> trail)
+    {
+        var payload = new List<ShotPointPayload>(trail.Count);
+        for (var i = 0; i < trail.Count; i++)
+        {
+            var point = trail[i];
+            if (IsFinite(point.X, point.Y))
+            {
+                payload.Add(new ShotPointPayload(point.X, point.Y));
+            }
+        }
+
+        return payload.ToArray();
+    }
+
+    public static ShotExplosionPayload[] BuildExplosionPayload(
+        IReadOnlyList<ExplosionResult> explosions,
+        string? weaponId)
+    {
+        var payload = new List<ShotExplosionPayload>(explosions.Count);
+        for (var i = 0; i < explosions.Count; i++)
+        {
+            var explosion = explosions[i];
+            if (!IsFinite(explosion.Center.X, explosion.Center.Y)) continue;
+
+            var radius = PositiveOrDefault(explosion.DamageRadius, 32);
+            if (radius <= 0) continue;
+
+            payload.Add(new ShotExplosionPayload(
+                explosion.Center.X,
+                explosion.Center.Y,
+                radius,
+                NonNegativeOrDefault(explosion.TerrainRadius, 0),
+                explosion.Nuclear,
+                explosion.DirtAdded,
+                weaponId,
+                explosion.VisualKind.ToString(),
+                explosion.VisualKind == ShotVisualKind.Fire,
+                explosion.VisualKind == ShotVisualKind.Lava,
+                explosion.VisualKind == ShotVisualKind.Missile,
+                explosion.VisualKind == ShotVisualKind.DroneSwarm,
+                explosion.VisualKind == ShotVisualKind.PatriotIntercept,
+                explosion.VisualKind == ShotVisualKind.ShieldHit,
+                explosion.TriggerTrailIndex));
+        }
+
+        return payload.ToArray();
+    }
+
+    public static ShotPlaybackOptionsPayload BuildPlaybackOptions(
+        bool intercepted,
+        Vector2? interceptPoint,
+        string? ownerTankId,
+        string? visualKind)
+    {
+        var hasValidIntercept = intercepted
+            && interceptPoint is { } point
+            && IsFinite(point.X, point.Y);
+
+        return new ShotPlaybackOptionsPayload(
+            hasValidIntercept,
+            hasValidIntercept ? interceptPoint!.Value.X : null,
+            hasValidIntercept ? interceptPoint!.Value.Y : null,
+            ownerTankId,
+            visualKind);
+    }
+
+    private static float PositiveOrDefault(float value, float fallback) =>
+        float.IsFinite(value) && value > 0 ? value : fallback;
+
+    private static float NonNegativeOrDefault(float value, float fallback) =>
+        float.IsFinite(value) && value >= 0 ? value : fallback;
+
+    private static bool IsFinite(float x, float y) => float.IsFinite(x) && float.IsFinite(y);
+}
+
+internal sealed record ShotPointPayload(float x, float y);
+
+internal sealed record ShotExplosionPayload(
+    float x,
+    float y,
+    float radius,
+    float terrainRadius,
+    bool nuclear,
+    bool dirt,
+    string? weaponId,
+    string visualKind,
+    bool napalm,
+    bool lava,
+    bool missile,
+    bool drone,
+    bool patriotIntercept,
+    bool shieldHit,
+    int triggerIndex);
+
+internal sealed record ShotPlaybackOptionsPayload(
+    bool intercepted,
+    float? interceptX,
+    float? interceptY,
+    string? ownerTankId,
+    string? visualKind);

@@ -1,0 +1,67 @@
+using System.Numerics;
+using ArmageddonRidge.Client.Services.Rendering;
+using ArmageddonRidge.Core.Models;
+
+namespace ArmageddonRidge.Tests;
+
+public sealed class HybridCanvasRenderPayloadTests
+{
+    [Fact]
+    public void ShotPlaybackPayloadDropsNonFiniteValuesBeforeJsInterop()
+    {
+        var trail = new[]
+        {
+            new Vector2(10, 20),
+            new Vector2(float.NaN, 30),
+            new Vector2(40, float.PositiveInfinity),
+            new Vector2(50, 60)
+        };
+        var explosions = new[]
+        {
+            new ExplosionResult(new Vector2(float.NaN, 90), 40, 30, 0, 0, false, false, [], ShotVisualKind.Laser),
+            new ExplosionResult(new Vector2(80, 90), float.PositiveInfinity, float.NaN, 0, 0, false, false, [], ShotVisualKind.Laser, TriggerTrailIndex: 2),
+            new ExplosionResult(new Vector2(100, 110), 42, 50, 0, 0, false, false, [], ShotVisualKind.PatriotIntercept)
+        };
+
+        var trailPayload = RenderPayloadSanitizer.BuildTrailPayload(trail);
+        var explosionPayload = RenderPayloadSanitizer.BuildExplosionPayload(explosions, WeaponIds.LaserLance);
+        var options = RenderPayloadSanitizer.BuildPlaybackOptions(
+            intercepted: true,
+            new Vector2(float.NaN, 20),
+            ownerTankId: "cpu",
+            visualKind: ShotVisualKind.PatriotIntercept.ToString());
+
+        Assert.Collection(
+            trailPayload,
+            point => Assert.Equal(new ShotPointPayload(10, 20), point),
+            point => Assert.Equal(new ShotPointPayload(50, 60), point));
+        Assert.Collection(
+            explosionPayload,
+            explosion =>
+            {
+                Assert.Equal(80, explosion.x);
+                Assert.Equal(90, explosion.y);
+                Assert.Equal(32, explosion.radius);
+                Assert.Equal(0, explosion.terrainRadius);
+                Assert.Equal(2, explosion.triggerIndex);
+                Assert.True(explosion.laserLike());
+            },
+            explosion =>
+            {
+                Assert.Equal(100, explosion.x);
+                Assert.Equal(110, explosion.y);
+                Assert.Equal(42, explosion.radius);
+                Assert.True(explosion.patriotIntercept);
+            });
+        Assert.False(options.intercepted);
+        Assert.Null(options.interceptX);
+        Assert.Null(options.interceptY);
+    }
+}
+
+file static class ShotExplosionPayloadTestExtensions
+{
+    public static bool laserLike(this ShotExplosionPayload payload) =>
+        payload.visualKind == ShotVisualKind.Laser.ToString()
+        && payload.weaponId == WeaponIds.LaserLance;
+}
