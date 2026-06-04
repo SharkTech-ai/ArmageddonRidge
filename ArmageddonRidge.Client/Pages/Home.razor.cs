@@ -856,8 +856,16 @@ public partial class Home
     private void TogglePerf()
     {
         _showPerf = !_showPerf;
-        if (_showPerf) StartPerfLoop();
-        else StopPerfLoop();
+        if (_showPerf)
+        {
+            StopFpsButtonLoop();
+            StartPerfLoop();
+        }
+        else
+        {
+            StopPerfLoop();
+            SyncBattleFpsLoop();
+        }
     }
 
     private void ToggleSettings() => _settingsOpen = !_settingsOpen;
@@ -1123,12 +1131,14 @@ public partial class Home
         {
             _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
             _showPerf = false;
+            SyncBattleFpsLoop();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
         {
             _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
             _showPerf = false;
+            SyncBattleFpsLoop();
             await InvokeAsync(StateHasChanged);
         }
         finally
