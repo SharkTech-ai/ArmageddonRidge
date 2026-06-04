@@ -95,6 +95,21 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void BuyingWeaponRejectedByInventoryCapacityDoesNotSpendCash()
+    {
+        var engine = CreateEngine();
+        var state = engine.NewMatch(new MatchSettings(TerrainSeed: 123, StartingCash: int.MaxValue));
+        state.PlayerTank.AddWeapon(WeaponIds.HeavyShell, int.MaxValue);
+        var before = state.PlayerTank.Cash;
+
+        var bought = engine.BuyWeapon(state, WeaponIds.HeavyShell);
+
+        Assert.False(bought);
+        Assert.Equal(before, state.PlayerTank.Cash);
+        Assert.Equal(int.MaxValue, state.PlayerTank.GetInventoryCount(WeaponIds.HeavyShell));
+    }
+
+    [Fact]
     public void StartBattleLogsRoundStartEvent()
     {
         var engine = CreateEngine();

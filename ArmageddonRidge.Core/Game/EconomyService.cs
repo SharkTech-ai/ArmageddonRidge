@@ -23,9 +23,10 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
         var weapon = _weapons.Get(weaponId);
         var total = (long)weapon.Cost * count;
         if (weapon.Cost <= 0 || tank.Cash < total) return false;
+        if ((long)tank.GetInventoryCount(weaponId) + count > int.MaxValue) return false;
 
-        tank.Cash -= (int)total;
         tank.AddWeapon(weaponId, count);
+        tank.Cash -= (int)total;
         return true;
     }
 
