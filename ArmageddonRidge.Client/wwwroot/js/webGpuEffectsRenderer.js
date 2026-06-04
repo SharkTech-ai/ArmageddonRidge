@@ -239,6 +239,11 @@ const explosionPresets = {
 };
 
 export async function initialize(baseElement, overlayElement, options = {}) {
+    stopLoop();
+    clearScheduledImpact();
+    clearPatriotState();
+    clearCpuState();
+
     if (overlayElement && typeof overlayElement.getContext === "function") {
         sourceCanvas = baseElement;
         canvas = overlayElement;
@@ -259,9 +264,6 @@ export async function initialize(baseElement, overlayElement, options = {}) {
         enabled = false;
         supported = false;
         fallbackReason = "Disabled";
-        clearScheduledImpact();
-        clearPatriotState();
-        clearCpuState();
         return getStats();
     }
 
@@ -269,9 +271,6 @@ export async function initialize(baseElement, overlayElement, options = {}) {
         enabled = false;
         supported = false;
         fallbackReason = "WebGPU unavailable";
-        clearScheduledImpact();
-        clearPatriotState();
-        clearCpuState();
         return getStats();
     }
 
@@ -290,6 +289,9 @@ export async function initialize(baseElement, overlayElement, options = {}) {
             supported = false;
             fallbackReason = info?.message ? `Device lost: ${info.message}` : "WebGPU device lost";
             stopLoop();
+            clearScheduledImpact();
+            clearPatriotState();
+            clearCpuState();
         });
 
         context = canvas.getContext("webgpu");
