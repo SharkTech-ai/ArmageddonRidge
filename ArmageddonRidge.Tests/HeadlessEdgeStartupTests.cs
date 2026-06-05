@@ -94,6 +94,7 @@ public sealed class HeadlessEdgeStartupTests
         Assert.Empty(result.Exceptions);
         Assert.Empty(result.NetworkFailures);
         Assert.Empty(result.FailedResponses);
+        Assert.Empty(result.CdpErrors);
     }
 
     private static string FormatStartupDiagnostics(BrowserSmokeResult result)
@@ -103,6 +104,7 @@ public sealed class HeadlessEdgeStartupTests
         AppendDiagnostics(builder, "Exceptions", result.Exceptions);
         AppendDiagnostics(builder, "Network failures", result.NetworkFailures);
         AppendDiagnostics(builder, "Failed responses", result.FailedResponses);
+        AppendDiagnostics(builder, "CDP errors", result.CdpErrors);
         return builder.ToString();
     }
 
@@ -672,7 +674,8 @@ public sealed class HeadlessEdgeStartupTests
                 client.ConsoleErrors.ToArray(),
                 client.Exceptions.ToArray(),
                 client.NetworkFailures.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
-                client.FailedResponses.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray());
+                client.FailedResponses.Where(f => f.Contains("localhost", StringComparison.OrdinalIgnoreCase)).ToArray(),
+                client.CdpErrors.ToArray());
         }
         finally
         {
@@ -818,7 +821,8 @@ public sealed class HeadlessEdgeStartupTests
         string[] ConsoleErrors,
         string[] Exceptions,
         string[] NetworkFailures,
-        string[] FailedResponses);
+        string[] FailedResponses,
+        string[] CdpErrors);
 
     private sealed record BrowserSmokeOptions(
         bool DisableWebGpuEffects,
@@ -867,12 +871,14 @@ public sealed class HeadlessEdgeStartupTests
         private readonly ClientWebSocket _socket;
         private readonly CancellationTokenSource _cts = new();
         private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
+        private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
         private int _nextId;
 
         public ConcurrentQueue<string> ConsoleErrors { get; } = new();
         public ConcurrentQueue<string> Exceptions { get; } = new();
         public ConcurrentQueue<string> NetworkFailures { get; } = new();
         public ConcurrentQueue<string> FailedResponses { get; } = new();
+        public ConcurrentQueue<string> CdpErrors { get; } = new();
 
         private CdpClient(ClientWebSocket socket)
         {
@@ -1082,7 +1088,22 @@ public sealed class HeadlessEdgeStartupTests
             });
 
             await _socket.SendAsync(payload, WebSocketMessageType.Text, true, _cts.Token);
-            return await tcs.Task.WaitAsync(TimeSpan.FromSeconds(15), _cts.Token);
+            try
+            {
+                return await tcs.Task.WaitAsync(CommandTimeout, _cts.Token);
+            }
+            catch (TimeoutException ex)
+            {
+                _pending.TryRemove(id, out _);
+                var message = $"Timed out waiting for CDP command '{method}' after {CommandTimeout.TotalSeconds:n0}s. SocketState={_socket.State}; pending={_pending.Count}.";
+                CdpErrors.Enqueue(message);
+                throw new TimeoutException(message, ex);
+            }
+            catch
+            {
+                _pending.TryRemove(id, out _);
+                throw;
+            }
         }
 
         private async Task ReceiveLoopAsync()
@@ -1098,7 +1119,12 @@ public sealed class HeadlessEdgeStartupTests
                     do
                     {
                         result = await _socket.ReceiveAsync(buffer, _cts.Token);
-                        if (result.MessageType == WebSocketMessageType.Close) return;
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            FailPending(new WebSocketException("The CDP websocket closed before all pending commands completed."));
+                            return;
+                        }
+
                         stream.Write(buffer, 0, result.Count);
                     }
                     while (!result.EndOfMessage);
@@ -1109,9 +1135,22 @@ public sealed class HeadlessEdgeStartupTests
                 {
                     return;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    CdpErrors.Enqueue($"CDP receive loop failed: {ex}");
+                    FailPending(ex);
                     return;
+                }
+            }
+        }
+
+        private void FailPending(Exception exception)
+        {
+            foreach (var item in _pending.ToArray())
+            {
+                if (_pending.TryRemove(item.Key, out var pending))
+                {
+                    pending.TrySetException(exception);
                 }
             }
         }

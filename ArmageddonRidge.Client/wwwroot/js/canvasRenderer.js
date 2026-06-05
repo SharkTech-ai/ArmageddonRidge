@@ -215,6 +215,24 @@ export function getStats() {
     return { fps: Math.round(fps), frameMs, renderMs };
 }
 
+export function sanitizeRenderPoints(points, minCount = 0) {
+    if (!Array.isArray(points)) {
+        return [];
+    }
+
+    const sanitized = [];
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+            sanitized.push({ x, y });
+        }
+    }
+
+    return sanitized.length >= minCount ? sanitized : [];
+}
+
 export function dispose() {
     resolveActiveShotPlayback();
     if (rafId) {
@@ -408,7 +426,7 @@ function drawTracerTrails(trails) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let i = 0; i < trails.length; i++) {
-        const trail = trails[i] ?? [];
+        const trail = sanitizeRenderPoints(trails[i], 2);
         if (trail.length < 2) {
             continue;
         }
@@ -1182,8 +1200,8 @@ function drawWind(wind) {
 }
 
 function drawAimPreview(preview) {
-    const points = Array.isArray(preview) ? preview : preview?.path;
-    const cone = Array.isArray(preview?.cone) ? preview.cone : [];
+    const points = sanitizeRenderPoints(Array.isArray(preview) ? preview : preview?.path, 2);
+    const cone = sanitizeRenderPoints(Array.isArray(preview?.cone) ? preview.cone : [], 3);
     if ((!points?.length || points.length < 2) && cone.length < 3) {
         return;
     }
