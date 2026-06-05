@@ -93,9 +93,17 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
     const shotScene = prepareScene(scene);
     shotInProgress = true;
     const playbackOptions = options ?? {};
-    let points = Array.isArray(trail) ? trail : Array.from(trail);
-    if (playbackOptions.intercepted && playbackOptions.interceptX !== undefined && playbackOptions.interceptY !== undefined) {
-        const patriotPlayback = createPatriotPlayback(points, { x: playbackOptions.interceptX, y: playbackOptions.interceptY });
+    let points = sanitizeRenderPoints(Array.isArray(trail) ? trail : Array.from(trail ?? []), 2);
+    if (!points.length) {
+        shotInProgress = false;
+        render(scene);
+        return;
+    }
+
+    const interceptX = Number(playbackOptions.interceptX);
+    const interceptY = Number(playbackOptions.interceptY);
+    if (playbackOptions.intercepted && Number.isFinite(interceptX) && Number.isFinite(interceptY)) {
+        const patriotPlayback = createPatriotPlayback(points, { x: interceptX, y: interceptY });
         points = patriotPlayback.points;
         playbackOptions.patriot = patriotPlayback;
     }
