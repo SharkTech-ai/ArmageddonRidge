@@ -655,12 +655,12 @@ public partial class Home
         path.Add(RenderPoint.FromVector(apex));
 
         var remaining = trail.Count - apexIndex - 1;
-        if (remaining <= 0) return new RenderPreviewTrail(path.ToArray(), []);
+        if (remaining <= 0) return RenderPayloadSanitizer.BuildPreviewPayload(path, []);
 
         var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.325f), 2, 40);
         var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
         var direction = coneCenter - apex;
-        if (direction.LengthSquared() < 0.001f) return new RenderPreviewTrail(path.ToArray(), []);
+        if (direction.LengthSquared() < 0.001f) return RenderPayloadSanitizer.BuildPreviewPayload(path, []);
 
         direction = Vector2.Normalize(direction);
         var normal = new Vector2(-direction.Y, direction.X);
@@ -670,8 +670,8 @@ public partial class Home
         var left = coneCenter + (normal * (width + jitter));
         var right = coneCenter - (normal * (width - jitter * 0.5f));
 
-        return new RenderPreviewTrail(
-            path.ToArray(),
+        return RenderPayloadSanitizer.BuildPreviewPayload(
+            path,
             [
                 RenderPoint.FromVector(apex),
                 RenderPoint.FromVector(left),

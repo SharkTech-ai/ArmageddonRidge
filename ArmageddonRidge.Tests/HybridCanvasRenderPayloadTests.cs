@@ -85,6 +85,44 @@ public sealed class HybridCanvasRenderPayloadTests
     }
 
     [Fact]
+    public void PreviewPayloadDropsNonFinitePointsBeforeSceneInterop()
+    {
+        var preview = RenderPayloadSanitizer.BuildPreviewPayload(
+            [
+                new RenderPoint(float.NaN, 10),
+                new RenderPoint(20, 30),
+                new RenderPoint(40, 50)
+            ],
+            [
+                new RenderPoint(60, 70),
+                new RenderPoint(float.PositiveInfinity, 90),
+                new RenderPoint(100, 110),
+                new RenderPoint(120, 130)
+            ]);
+
+        Assert.Collection(
+            preview.Path,
+            point => Assert.Equal(new RenderPoint(20, 30), point),
+            point => Assert.Equal(new RenderPoint(40, 50), point));
+        Assert.Collection(
+            preview.Cone,
+            point => Assert.Equal(new RenderPoint(60, 70), point),
+            point => Assert.Equal(new RenderPoint(100, 110), point),
+            point => Assert.Equal(new RenderPoint(120, 130), point));
+    }
+
+    [Fact]
+    public void PreviewPayloadDropsIncompleteGeometryAfterFiltering()
+    {
+        var preview = RenderPayloadSanitizer.BuildPreviewPayload(
+            [new RenderPoint(float.NaN, 10), new RenderPoint(20, 30)],
+            [new RenderPoint(60, 70), new RenderPoint(float.PositiveInfinity, 90), new RenderPoint(100, 110)]);
+
+        Assert.Empty(preview.Path);
+        Assert.Empty(preview.Cone);
+    }
+
+    [Fact]
     public void EffectPayloadDropsNonFiniteValuesBeforeWebGpuInterop()
     {
         var trail = new[]

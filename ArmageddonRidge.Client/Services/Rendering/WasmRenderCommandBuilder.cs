@@ -118,14 +118,16 @@ public sealed class WasmRenderCommandBuilder
 
     private static void AddPreview(List<RenderCommand> commands, RenderPreviewTrail preview)
     {
-        if (preview.Path.Length > 1)
+        var path = Flatten(preview.Path);
+        if (path.Length >= 4)
         {
-            commands.Add(new RenderCommand { Op = "smoothPolyline", Points = Flatten(preview.Path), Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
+            commands.Add(new RenderCommand { Op = "smoothPolyline", Points = path, Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
         }
 
-        if (preview.Cone.Length >= 3)
+        var cone = Flatten(preview.Cone);
+        if (cone.Length >= 6)
         {
-            commands.Add(new RenderCommand { Op = "poly", Points = Flatten(preview.Cone), Fill = "rgba(80,197,183,0.16)", Stroke = "rgba(80,197,183,0.46)", LineWidth = 1 });
+            commands.Add(new RenderCommand { Op = "poly", Points = cone, Fill = "rgba(80,197,183,0.16)", Stroke = "rgba(80,197,183,0.46)", LineWidth = 1 });
         }
     }
 
@@ -136,11 +138,14 @@ public sealed class WasmRenderCommandBuilder
             var trail = trails[i];
             if (trail.Length < 2) continue;
 
+            var points = Flatten(trail);
+            if (points.Length < 4) continue;
+
             var alpha = Math.Clamp(0.22f + (i / (float)Math.Max(1, trails.Count)) * 0.34f, 0.22f, 0.56f);
             commands.Add(new RenderCommand
             {
                 Op = "polyline",
-                Points = Flatten(trail),
+                Points = points,
                 Stroke = $"rgba(255,248,217,{alpha:0.###})",
                 LineWidth = 2
             });
@@ -335,14 +340,16 @@ public sealed class WasmRenderCommandBuilder
 
     private static float[] Flatten(IReadOnlyList<RenderPoint> points)
     {
-        var values = new float[points.Count * 2];
+        var values = new List<float>(points.Count * 2);
         for (var i = 0; i < points.Count; i++)
         {
-            values[i * 2] = points[i].X;
-            values[(i * 2) + 1] = points[i].Y;
+            if (!IsFinite2(points[i].X, points[i].Y)) continue;
+
+            values.Add(points[i].X);
+            values.Add(points[i].Y);
         }
 
-        return values;
+        return values.ToArray();
     }
 
     private static bool IsFinite2(float a, float b) => float.IsFinite(a) && float.IsFinite(b);

@@ -145,7 +145,14 @@ public sealed class WasmRenderCommandBuilderTests
                 new RenderRadiationZone(120, 120, 24, 2, "Lava", true)
             ],
             Player = new RenderTank("player", float.NaN, 620, 45, 75, 0, false, 620, 0),
-            Cpu = new RenderTank("cpu", 1040, 620, 135, 75, 0, true, 620, 0)
+            Cpu = new RenderTank("cpu", 1040, 620, 135, 75, 0, true, 620, 0),
+            PreviewTrail = new RenderPreviewTrail(
+                [new RenderPoint(float.NaN, 90), new RenderPoint(90, 100), new RenderPoint(110, 105)],
+                [new RenderPoint(95, 95), new RenderPoint(float.PositiveInfinity, 105), new RenderPoint(130, 112)]),
+            TracerTrails =
+            [
+                [new RenderPoint(float.NaN, 80), new RenderPoint(70, 85), new RenderPoint(90, 95)]
+            ]
         };
 
         var frame = builder.BuildFrame(

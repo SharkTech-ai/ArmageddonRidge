@@ -53,6 +53,17 @@ internal static class RenderPayloadSanitizer
         return result;
     }
 
+    public static RenderPreviewTrail BuildPreviewPayload(
+        IReadOnlyList<RenderPoint> path,
+        IReadOnlyList<RenderPoint> cone)
+    {
+        var finitePath = BuildFiniteRenderPointPayload(path);
+        var finiteCone = BuildFiniteRenderPointPayload(cone);
+        return new RenderPreviewTrail(
+            finitePath.Length >= 2 ? finitePath : [],
+            finiteCone.Length >= 3 ? finiteCone : []);
+    }
+
     public static EffectPointPayload[] BuildEffectTrailPayload(IReadOnlyList<Vector2> trail, int maxPoints)
     {
         if (maxPoints < 1 || trail.Count == 0) return [];
@@ -209,6 +220,21 @@ internal static class RenderPayloadSanitizer
         float.IsFinite(value) && value >= 0 ? value : fallback;
 
     private static bool IsFinite(float x, float y) => float.IsFinite(x) && float.IsFinite(y);
+
+    private static RenderPoint[] BuildFiniteRenderPointPayload(IReadOnlyList<RenderPoint> points)
+    {
+        var payload = new List<RenderPoint>(points.Count);
+        for (var i = 0; i < points.Count; i++)
+        {
+            var point = points[i];
+            if (IsFinite(point.X, point.Y))
+            {
+                payload.Add(point);
+            }
+        }
+
+        return payload.ToArray();
+    }
 }
 
 internal sealed record ShotPointPayload(float x, float y);
