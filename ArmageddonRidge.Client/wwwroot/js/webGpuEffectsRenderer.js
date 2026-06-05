@@ -382,13 +382,14 @@ function applyDiagnosticOptions(options = {}) {
 export function spawnShotEffects(payload) {
     if (!enabled || !device) return getStats();
 
+    const safePayload = sanitizeEffectPayload(payload);
     beginSpawnBatch();
-    if (String(payload?.phase ?? "").toLowerCase() === "flight") {
-        spawnFlightEffects(payload);
-        startPatriotInterception(payload);
-        scheduleImpactEffects(payload);
+    if (String(safePayload?.phase ?? "").toLowerCase() === "flight") {
+        spawnFlightEffects(safePayload);
+        startPatriotInterception(safePayload);
+        scheduleImpactEffects(safePayload);
     } else {
-        spawnImpactEffects(payload);
+        spawnImpactEffects(safePayload);
     }
     endSpawnBatch();
 
@@ -400,13 +401,13 @@ export function spawnTerrainEffects(payload) {
         return getStats();
     }
 
-    const wind = Number(payload.wind ?? currentWind);
-    const explosions = payload.explosions ?? [];
+    const wind = finiteNumber(payload?.wind, currentWind);
+    const explosions = sanitizeEffectExplosions(payload?.explosions ?? []);
     beginSpawnBatch();
     for (const explosion of explosions) {
-        const x = Number(explosion.x ?? 0);
-        const radius = Math.max(16, Number(explosion.terrainRadius ?? explosion.radius ?? 40));
-        const centerY = Number(explosion.y ?? surfaceY(x));
+        const x = explosion.x;
+        const radius = Math.max(16, explosion.terrainRadius ?? explosion.radius ?? 40);
+        const centerY = explosion.y;
         const surface = Math.min(centerY, surfaceY(x));
         const preset = resolveExplosionPreset(explosion, payload);
         const rimCount = scaledCount(radius * 0.62, 14, 72);
@@ -445,6 +446,70 @@ export function spawnTerrainEffects(payload) {
     endSpawnBatch();
 
     return getStats();
+}
+
+export function sanitizeEffectPoints(points, minCount = 0) {
+    if (!Array.isArray(points)) {
+        return [];
+    }
+
+    const sanitized = [];
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const x = finitePointCoordinate(point, "x");
+        const y = finitePointCoordinate(point, "y");
+        if (x !== undefined && y !== undefined) {
+            sanitized.push({ x, y });
+        }
+    }
+
+    return sanitized.length >= minCount ? sanitized : [];
+}
+
+export function sanitizeEffectExplosions(explosions) {
+    if (!Array.isArray(explosions)) {
+        return [];
+    }
+
+    const sanitized = [];
+    for (let i = 0; i < explosions.length; i++) {
+        const explosion = explosions[i];
+        const x = finitePointCoordinate(explosion, "x");
+        const y = finitePointCoordinate(explosion, "y");
+        if (x === undefined || y === undefined) {
+            continue;
+        }
+
+        const radius = positiveNumber(payloadValue(explosion, "radius"), 36);
+        if (radius <= 0) {
+            continue;
+        }
+
+        sanitized.push({
+            ...explosion,
+            x,
+            y,
+            radius,
+            terrainRadius: nonNegativeNumber(payloadValue(explosion, "terrainRadius"), radius)
+        });
+    }
+
+    return sanitized;
+}
+
+function sanitizeEffectPayload(payload) {
+    if (!payload) {
+        return { trail: [], trailPointCount: 0, explosions: [] };
+    }
+
+    const trail = sanitizeEffectPoints(payload.trail ?? payload.Trail ?? [], 1);
+    const explosions = sanitizeEffectExplosions(payload.explosions ?? payload.Explosions ?? []);
+    return {
+        ...payload,
+        trail,
+        explosions,
+        trailPointCount: trail.length
+    };
 }
 
 export function getStats() {
@@ -1008,7 +1073,7 @@ export function estimateImpactDelayMs(payload) {
         visualDuration = Math.min(1200, Math.max(260, trailCount * 4));
     }
 
-    if (payload?.intercepted) {
+    if (truthyPayloadValue(payload, "intercepted")) {
         visualDuration = Math.max(2900, Math.min(3400, visualDuration * 2.6));
     }
 
@@ -1996,6 +2061,26 @@ function surfaceY(x) {
 
 function normalized(value) {
     return String(value ?? "").toLowerCase();
+}
+
+function finitePointCoordinate(payload, camelName) {
+    const value = Number(payloadValue(payload, camelName));
+    return Number.isFinite(value) ? value : undefined;
+}
+
+function finiteNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function positiveNumber(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function nonNegativeNumber(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
 }
 
 function randomBetween(min, max) {
