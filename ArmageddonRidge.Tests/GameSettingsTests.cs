@@ -46,4 +46,34 @@ public sealed class GameSettingsTests
         Assert.NotNull(restored);
         Assert.Equal(RenderMode.FullWasm, restored.RenderMode);
     }
+
+    [Fact]
+    public void DisabledNuclearWeaponsRoundTripThroughSaveSettings()
+    {
+        var settings = new GameSettings(EnableNuclearWeapons: false);
+        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var restored = JsonSerializer.Deserialize<GameSettings>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(restored);
+        Assert.False(restored.EnableNuclearWeapons);
+    }
+
+    [Fact]
+    public void NormalizeClampsParseableButInvalidSavedPreferences()
+    {
+        var settings = new GameSettings(
+            MasterVolume: float.PositiveInfinity,
+            SfxVolume: 4.5f,
+            Difficulty: (Difficulty)999,
+            StartingCash: int.MaxValue,
+            RenderMode: (RenderMode)999);
+
+        var normalized = settings.Normalize();
+
+        Assert.Equal(0.8f, normalized.MasterVolume);
+        Assert.Equal(1f, normalized.SfxVolume);
+        Assert.Equal(Difficulty.Normal, normalized.Difficulty);
+        Assert.Equal(10_000, normalized.StartingCash);
+        Assert.Equal(RenderMode.Hybrid, normalized.RenderMode);
+    }
 }

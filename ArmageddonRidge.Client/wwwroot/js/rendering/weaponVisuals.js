@@ -1,5 +1,6 @@
-export function isMissileWeapon(weaponId) {
+export function isMissileWeapon(weaponId, visualKind) {
     const id = (weaponId ?? "").toLowerCase();
+    const kind = (visualKind ?? "").toLowerCase();
     return id.includes("missile")
         || id.includes("rocket")
         || id.includes("nuke")
@@ -11,7 +12,12 @@ export function isMissileWeapon(weaponId) {
         || id.includes("gbu")
         || id.includes("mop")
         || id.includes("penetrator")
-        || id.includes("patriot");
+        || id.includes("patriot")
+        || kind.includes("missile")
+        || kind.includes("nuclear")
+        || kind.includes("drone")
+        || kind.includes("penetrator")
+        || kind.includes("patriot");
 }
 
 export function isLaserWeapon(weaponId, visualKind) {
@@ -20,9 +26,10 @@ export function isLaserWeapon(weaponId, visualKind) {
     return id.includes("laser") || kind.includes("laser");
 }
 
-export function isDroneWeapon(weaponId) {
+export function isDroneWeapon(weaponId, visualKind) {
     const id = (weaponId ?? "").toLowerCase();
-    return id.includes("shahed") || id.includes("drone");
+    const kind = (visualKind ?? "").toLowerCase();
+    return id.includes("shahed") || id.includes("drone") || kind.includes("drone");
 }
 
 export function isDarkEagleWeapon(weaponId) {
@@ -34,19 +41,22 @@ export function isMirvWeapon(weaponId) {
     return id.includes("mirv") || id.includes("splitter");
 }
 
-export function isMopWeapon(weaponId) {
+export function isMopWeapon(weaponId, visualKind) {
     const id = (weaponId ?? "").toLowerCase();
-    return id.includes("gbu") || id.includes("mop") || id.includes("penetrator");
+    const kind = (visualKind ?? "").toLowerCase();
+    return id.includes("gbu") || id.includes("mop") || id.includes("penetrator") || kind.includes("penetrator");
 }
 
-export function isNapalmWeapon(weaponId) {
+export function isNapalmWeapon(weaponId, visualKind) {
     const id = (weaponId ?? "").toLowerCase();
-    return id.includes("napalm") || id.includes("lava");
+    const kind = (visualKind ?? "").toLowerCase();
+    return id.includes("napalm") || id.includes("lava") || kind.includes("fire") || kind.includes("lava");
 }
 
 export function isLavaExplosion(explosion) {
     const id = (explosion.weaponId ?? explosion.weapon ?? explosion.kind ?? "").toLowerCase();
-    return Boolean(explosion.lava || explosion.napalm || id === "napalm-flask" || id.includes("napalm") || id.includes("lava"));
+    const kind = (explosion.visualKind ?? "").toLowerCase();
+    return Boolean(explosion.lava || explosion.napalm || id === "napalm-flask" || id.includes("napalm") || id.includes("lava") || kind.includes("lava") || kind.includes("fire"));
 }
 
 export function isPatriotExplosion(explosion) {

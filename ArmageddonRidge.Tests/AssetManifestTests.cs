@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ArmageddonRidge.Core.Content;
 
 namespace ArmageddonRidge.Tests;
 
@@ -63,6 +64,25 @@ public sealed class AssetManifestTests
         }
     }
 
+    [Fact]
+    public void ShopCatalogIconsExistForEveryVisibleWeaponAndUpgrade()
+    {
+        var repoRoot = FindRepoRoot();
+        var iconRoot = Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "assets", "sprites", "icons");
+        var weapons = new WeaponCatalog();
+        var upgrades = new UpgradeCatalog();
+
+        foreach (var weapon in weapons.All.Where(static weapon => weapon.Cost > 0))
+        {
+            AssertIconExists(iconRoot, weapon.Id);
+        }
+
+        foreach (var upgrade in upgrades.All)
+        {
+            AssertIconExists(iconRoot, upgrade.Type.ToString());
+        }
+    }
+
     private static (int Width, int Height, bool HasAlpha) ReadPngHeader(string path)
     {
         using var stream = File.OpenRead(path);
@@ -86,6 +106,16 @@ public sealed class AssetManifestTests
     {
         var bytes = reader.ReadBytes(4);
         return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
+    }
+
+    private static void AssertIconExists(string iconRoot, string id)
+    {
+        var relativePath = $"{id.ToLowerInvariant()}.png";
+        var path = Path.Combine(iconRoot, relativePath);
+        Assert.True(File.Exists(path), $"Missing shop icon {relativePath}.");
+        var (width, height, hasAlpha) = ReadPngHeader(path);
+        Assert.True(width > 0 && height > 0, relativePath);
+        Assert.True(hasAlpha, $"{relativePath} should preserve transparency.");
     }
 
     private static string FindRepoRoot()

@@ -9,7 +9,6 @@ public sealed class WasmRenderCommandBuilder
 {
     private float[]? _cachedTerrain;
     private float[] _cachedTerrainPoints = [];
-    private int _cachedTerrainWidth;
     private int _cachedTerrainHeight;
 
     public RenderFrame BuildFrame(RenderScene scene, IReadOnlyList<RenderPoint>? trail = null, IReadOnlyList<WasmExplosion>? explosions = null, float progress = 1)
@@ -23,8 +22,10 @@ public sealed class WasmRenderCommandBuilder
         AddTank(commands, scene.Player, "#50c5b7", "#d7f7ff");
         AddTank(commands, scene.Cpu, "#ec6a5c", "#ffd6d0");
 
-        if (trail is { Count: > 1 }) AddTrail(commands, trail, progress);
-        if (explosions is { Count: > 0 }) AddExplosions(commands, explosions, progress);
+        var visibleTrailCount = trail is { Count: > 1 }
+            ? AddTrail(commands, trail, progress)
+            : 0;
+        if (explosions is { Count: > 0 }) AddExplosions(commands, explosions, progress, visibleTrailCount, trail?.Count ?? 0);
 
         AddWind(commands, scene);
         return new RenderFrame(scene.World, commands);
@@ -81,7 +82,6 @@ public sealed class WasmRenderCommandBuilder
         if (terrain is not null)
         {
             _cachedTerrain = terrain;
-            _cachedTerrainWidth = scene.World.Width;
             _cachedTerrainHeight = scene.World.Height;
             _cachedTerrainPoints = BuildTerrainPolygon(terrain, scene.World.Height);
         }
@@ -101,6 +101,8 @@ public sealed class WasmRenderCommandBuilder
         for (var i = 0; i < scene.Radiation.Length; i++)
         {
             var zone = scene.Radiation[i];
+            if (!IsFinite3(zone.X, zone.Y, zone.Radius) || zone.Radius <= 0) continue;
+
             commands.Add(new RenderCommand
             {
                 Op = "circle",
@@ -116,14 +118,16 @@ public sealed class WasmRenderCommandBuilder
 
     private static void AddPreview(List<RenderCommand> commands, RenderPreviewTrail preview)
     {
-        if (preview.Path.Length > 1)
+        var path = Flatten(preview.Path);
+        if (path.Length >= 4)
         {
-            commands.Add(new RenderCommand { Op = "smoothPolyline", Points = Flatten(preview.Path), Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
+            commands.Add(new RenderCommand { Op = "smoothPolyline", Points = path, Stroke = "rgba(215,247,255,0.62)", LineWidth = 2 });
         }
 
-        if (preview.Cone.Length >= 3)
+        var cone = Flatten(preview.Cone);
+        if (cone.Length >= 6)
         {
-            commands.Add(new RenderCommand { Op = "poly", Points = Flatten(preview.Cone), Fill = "rgba(80,197,183,0.16)", Stroke = "rgba(80,197,183,0.46)", LineWidth = 1 });
+            commands.Add(new RenderCommand { Op = "poly", Points = cone, Fill = "rgba(80,197,183,0.16)", Stroke = "rgba(80,197,183,0.46)", LineWidth = 1 });
         }
     }
 
@@ -134,11 +138,14 @@ public sealed class WasmRenderCommandBuilder
             var trail = trails[i];
             if (trail.Length < 2) continue;
 
+            var points = Flatten(trail);
+            if (points.Length < 4) continue;
+
             var alpha = Math.Clamp(0.22f + (i / (float)Math.Max(1, trails.Count)) * 0.34f, 0.22f, 0.56f);
             commands.Add(new RenderCommand
             {
                 Op = "polyline",
-                Points = Flatten(trail),
+                Points = points,
                 Stroke = $"rgba(255,248,217,{alpha:0.###})",
                 LineWidth = 2
             });
@@ -147,6 +154,8 @@ public sealed class WasmRenderCommandBuilder
 
     private static void AddTank(List<RenderCommand> commands, RenderTank tank, string fill, string highlight)
     {
+        if (!IsFinite4(tank.X, tank.Y, tank.Angle, tank.BuriedDepth)) return;
+
         var baseY = tank.Y - MathF.Min(tank.BuriedDepth, 18);
         var hullWidth = GameConstants.TankCollisionWidth;
         var hullHeight = GameConstants.TankCollisionHeight * 0.5f;
@@ -177,26 +186,100 @@ public sealed class WasmRenderCommandBuilder
         }
     }
 
-    private static void AddTrail(List<RenderCommand> commands, IReadOnlyList<RenderPoint> trail, float progress)
+    private static int AddTrail(List<RenderCommand> commands, IReadOnlyList<RenderPoint> trail, float progress)
     {
         var count = Math.Clamp((int)MathF.Ceiling(trail.Count * progress), 2, trail.Count);
-        var visible = new RenderPoint[count];
-        for (var i = 0; i < count; i++) visible[i] = trail[i];
+        var visible = new List<RenderPoint>(count);
+        for (var i = 0; i < count; i++)
+        {
+            if (IsFinite2(trail[i].X, trail[i].Y)) visible.Add(trail[i]);
+        }
+
+        if (visible.Count < 2) return count;
+
         commands.Add(new RenderCommand { Op = "polyline", Points = Flatten(visible), Stroke = "rgba(255,248,217,0.75)", LineWidth = 3 });
 
         var head = visible[^1];
         commands.Add(new RenderCommand { Op = "circle", X = head.X, Y = head.Y, R = 6, Fill = "#fff8d9", Stroke = "#f2c14e", LineWidth = 2 });
+        return count;
     }
 
-    private static void AddExplosions(List<RenderCommand> commands, IReadOnlyList<WasmExplosion> explosions, float progress)
+    private static void AddExplosions(List<RenderCommand> commands, IReadOnlyList<WasmExplosion> explosions, float progress, int visibleTrailCount, int trailCount)
     {
         for (var i = 0; i < explosions.Count; i++)
         {
             var explosion = explosions[i];
+            if (trailCount > 0)
+            {
+                var triggerIndex = explosion.TriggerIndex >= 0
+                    ? explosion.TriggerIndex
+                    : trailCount - 1;
+                if (visibleTrailCount <= triggerIndex)
+                    continue;
+            }
+
+            var kind = explosion.VisualKind ?? string.Empty;
+            var normalizedKind = kind.ToLowerInvariant();
+            if (!IsFinite3(explosion.X, explosion.Y, explosion.Radius) || explosion.Radius <= 0) continue;
+
             var radius = MathF.Max(8, explosion.Radius * MathF.Sin(progress * MathF.PI * 0.5f));
-            commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y, R = radius, Fill = "rgba(242,193,78,0.32)", Stroke = "rgba(255,248,217,0.75)", LineWidth = 3 });
-            if (explosion.Nuclear) commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y - radius * 0.7f, R = radius * 0.6f, Fill = "rgba(255,248,217,0.24)", Stroke = "rgba(236,106,92,0.58)", LineWidth = 3 });
+            var style = ExplosionStyle(normalizedKind, explosion);
+            commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y, R = radius, Fill = style.Fill, Stroke = style.Stroke, LineWidth = style.LineWidth });
+
+            if (explosion.Nuclear)
+            {
+                commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y - radius * 0.7f, R = radius * 0.6f, Fill = "rgba(255,248,217,0.24)", Stroke = "rgba(236,106,92,0.58)", LineWidth = 3 });
+                continue;
+            }
+
+            if (normalizedKind.Contains("shield", StringComparison.Ordinal))
+            {
+                commands.Add(new RenderCommand { Op = "ellipse", X = explosion.X, Y = explosion.Y, W = radius * 1.45f, H = radius * 0.82f, Fill = "rgba(117,213,255,0.10)", Stroke = "rgba(136,226,255,0.82)", LineWidth = 2.5f });
+            }
+            else if (normalizedKind.Contains("patriot", StringComparison.Ordinal))
+            {
+                commands.Add(new RenderCommand { Op = "line", X = explosion.X - radius * 0.7f, Y = explosion.Y, X2 = explosion.X + radius * 0.7f, Y2 = explosion.Y, Stroke = "rgba(125,220,255,0.86)", LineWidth = 3 });
+                commands.Add(new RenderCommand { Op = "line", X = explosion.X, Y = explosion.Y - radius * 0.7f, X2 = explosion.X, Y2 = explosion.Y + radius * 0.7f, Stroke = "rgba(125,220,255,0.70)", LineWidth = 2 });
+            }
+            else if (normalizedKind.Contains("penetrator", StringComparison.Ordinal))
+            {
+                commands.Add(new RenderCommand { Op = "line", X = explosion.X - radius * 0.55f, Y = explosion.Y + radius * 0.45f, X2 = explosion.X + radius * 0.55f, Y2 = explosion.Y - radius * 0.45f, Stroke = "rgba(255,248,217,0.80)", LineWidth = 4 });
+            }
+            else if (normalizedKind.Contains("lava", StringComparison.Ordinal) || normalizedKind.Contains("fire", StringComparison.Ordinal))
+            {
+                commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y + radius * 0.15f, R = radius * 0.55f, Fill = "rgba(255,95,36,0.30)", Stroke = "rgba(255,183,80,0.66)", LineWidth = 2 });
+            }
+            else if (normalizedKind.Contains("laser", StringComparison.Ordinal))
+            {
+                commands.Add(new RenderCommand { Op = "circle", X = explosion.X, Y = explosion.Y, R = radius * 0.38f, Fill = "rgba(123,243,255,0.30)", Stroke = "rgba(255,255,255,0.78)", LineWidth = 2 });
+            }
         }
+    }
+
+    private static (string Fill, string Stroke, float LineWidth) ExplosionStyle(string normalizedKind, WasmExplosion explosion)
+    {
+        if (explosion.Nuclear)
+            return ("rgba(255,248,217,0.36)", "rgba(236,106,92,0.82)", 4f);
+
+        if (normalizedKind.Contains("shield", StringComparison.Ordinal))
+            return ("rgba(117,213,255,0.18)", "rgba(136,226,255,0.88)", 3f);
+
+        if (normalizedKind.Contains("patriot", StringComparison.Ordinal))
+            return ("rgba(125,220,255,0.24)", "rgba(255,248,217,0.82)", 3f);
+
+        if (normalizedKind.Contains("penetrator", StringComparison.Ordinal))
+            return ("rgba(214,196,170,0.28)", "rgba(255,248,217,0.78)", 3.5f);
+
+        if (normalizedKind.Contains("lava", StringComparison.Ordinal) || normalizedKind.Contains("fire", StringComparison.Ordinal))
+            return ("rgba(255,95,36,0.34)", "rgba(255,183,80,0.84)", 3f);
+
+        if (normalizedKind.Contains("laser", StringComparison.Ordinal))
+            return ("rgba(123,243,255,0.26)", "rgba(255,255,255,0.78)", 2.5f);
+
+        if (explosion.Dirt || normalizedKind.Contains("dirt", StringComparison.Ordinal))
+            return ("rgba(145,108,71,0.34)", "rgba(219,181,116,0.72)", 3f);
+
+        return ("rgba(242,193,78,0.32)", "rgba(255,248,217,0.75)", 3f);
     }
 
     private static void AddWind(List<RenderCommand> commands, RenderScene scene)
@@ -232,11 +315,11 @@ public sealed class WasmRenderCommandBuilder
         for (var x = 0; x < terrain.Count; x += stride)
         {
             points.Add(x);
-            points.Add(worldHeight - terrain[x]);
+            points.Add(worldHeight - SurfaceY(terrain[x], worldHeight));
         }
 
         points.Add(terrain.Count - 1);
-        points.Add(worldHeight - terrain[^1]);
+        points.Add(worldHeight - SurfaceY(terrain[^1], worldHeight));
         points.Add(terrain.Count - 1);
         points.Add(worldHeight);
         return points.ToArray();
@@ -249,7 +332,7 @@ public sealed class WasmRenderCommandBuilder
         for (var x = 0; x < terrain.Count; x += stride)
         {
             points.Add(x);
-            points.Add(worldHeight - terrain[x]);
+            points.Add(worldHeight - SurfaceY(terrain[x], worldHeight));
         }
 
         return points.ToArray();
@@ -257,13 +340,24 @@ public sealed class WasmRenderCommandBuilder
 
     private static float[] Flatten(IReadOnlyList<RenderPoint> points)
     {
-        var values = new float[points.Count * 2];
+        var values = new List<float>(points.Count * 2);
         for (var i = 0; i < points.Count; i++)
         {
-            values[i * 2] = points[i].X;
-            values[(i * 2) + 1] = points[i].Y;
+            if (!IsFinite2(points[i].X, points[i].Y)) continue;
+
+            values.Add(points[i].X);
+            values.Add(points[i].Y);
         }
 
-        return values;
+        return values.ToArray();
     }
+
+    private static bool IsFinite2(float a, float b) => float.IsFinite(a) && float.IsFinite(b);
+
+    private static bool IsFinite3(float a, float b, float c) => IsFinite2(a, b) && float.IsFinite(c);
+
+    private static bool IsFinite4(float a, float b, float c, float d) => IsFinite3(a, b, c) && float.IsFinite(d);
+
+    private static float SurfaceY(float y, int worldHeight) =>
+        float.IsFinite(y) ? Math.Clamp(y, 0, worldHeight) : worldHeight;
 }

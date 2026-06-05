@@ -62,7 +62,7 @@
                             <span style="width:@TankHealthWidth(_state.PlayerTank, true)"></span>
                         </div>
                         <div class="fighter-bar shield">
-                            <span style="width:@TankShieldWidth(_state.PlayerTank)"></span>
+                            <span style="width:@TankShieldWidth(_state.PlayerTank, true)"></span>
                         </div>
                     </div>
 
@@ -81,7 +81,7 @@
                             <span style="width:@TankHealthWidth(_state.CpuTank, false)"></span>
                         </div>
                         <div class="fighter-bar shield">
-                            <span style="width:@TankShieldWidth(_state.CpuTank)"></span>
+                            <span style="width:@TankShieldWidth(_state.CpuTank, false)"></span>
                         </div>
                     </div>
                 </div>
@@ -115,6 +115,10 @@
                         <span>CPU: @_state.LastPerformance.CpuPlanningMs.ToString("0.00") ms</span>
                         <span>Trail: @_state.LastPerformance.TrailPoints</span>
                     </div>
+                }
+                @if (VisiblePhase == GamePhase.Battle && !string.IsNullOrWhiteSpace(LatestCombatEvent))
+                {
+                    <div class="taunt" aria-live="polite">@LatestCombatEvent</div>
                 }
                 @if (VisiblePhase == GamePhase.Battle)
                 {
@@ -153,8 +157,18 @@
                 </header>
 
                 <div class="tank-bars">
-                    <TankReadout Label="Player" Tank="_state.PlayerTank" HealthHit="_playerHurt" ShieldHit="_playerShieldHit" />
-                    <TankReadout Label="@_state.CpuTank.Name" Tank="_state.CpuTank" HealthHit="_cpuHurt" ShieldHit="_cpuShieldHit" />
+                    <TankReadout Label="Player"
+                                 Tank="_state.PlayerTank"
+                                 DisplayHealth="DisplayTankHealth(_state.PlayerTank, true)"
+                                 DisplayShield="DisplayTankShield(_state.PlayerTank, true)"
+                                 HealthHit="_playerHurt"
+                                 ShieldHit="_playerShieldHit" />
+                    <TankReadout Label="@_state.CpuTank.Name"
+                                 Tank="_state.CpuTank"
+                                 DisplayHealth="DisplayTankHealth(_state.CpuTank, false)"
+                                 DisplayShield="DisplayTankShield(_state.CpuTank, false)"
+                                 HealthHit="_cpuHurt"
+                                 ShieldHit="_cpuShieldHit" />
                 </div>
 
                 <div class="wind-card">
@@ -167,6 +181,7 @@
                     <ShopPanel Weapons="AllWeapons"
                                Upgrades="AllUpgrades"
                                State="_state"
+                               EnableNuclearWeapons="_enableNuclearWeapons"
                                TargetingComputerEnabledByDefault="_targetingComputerEnabledByDefault"
                                OnBuyWeapon="BuyWeaponAsync"
                                OnBuyUpgrade="BuyUpgradeAsync"
@@ -231,6 +246,10 @@
             <label class="settings-row">
                 <span>Targeting computer</span>
                 <input type="checkbox" checked="@_targetingComputerEnabledByDefault" @onchange="HandleTargetingComputerChangedAsync" />
+            </label>
+            <label class="settings-row">
+                <span>Nuclear weapons</span>
+                <input type="checkbox" checked="@_enableNuclearWeapons" @onchange="HandleNuclearWeaponsChangedAsync" />
             </label>
             <label class="settings-row">
                 <span>Rendering</span>

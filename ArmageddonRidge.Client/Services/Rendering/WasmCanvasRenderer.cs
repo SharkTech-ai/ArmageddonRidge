@@ -22,12 +22,10 @@ public sealed class WasmCanvasRenderer(IJSRuntime js, WasmRenderCommandBuilder c
     {
         if (_module is null) return null;
 
-        var sceneTimer = Stopwatch.StartNew();
-        sceneTimer.Stop();
         var commandTimer = Stopwatch.StartNew();
         var frame = commands.BuildFrame(scene);
         commandTimer.Stop();
-        var diagnostics = commands.Diagnostics(frame, sceneTimer.Elapsed.TotalMilliseconds, commandTimer.Elapsed.TotalMilliseconds);
+        var diagnostics = commands.Diagnostics(frame, 0, commandTimer.Elapsed.TotalMilliseconds);
         var started = Stopwatch.StartNew();
         var bridgeStats = await _module.InvokeAsync<RenderStats>("submit", frame);
         started.Stop();
@@ -84,7 +82,20 @@ public sealed class WasmCanvasRenderer(IJSRuntime js, WasmRenderCommandBuilder c
 
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null) await _module.DisposeAsync();
+        if (_module is null) return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("dispose");
+            await _module.DisposeAsync();
+        }
+        catch (JSException)
+        {
+        }
+        finally
+        {
+            _module = null;
+        }
     }
 
     private static WasmExplosion[] BuildExplosions(ShotResolution resolution)

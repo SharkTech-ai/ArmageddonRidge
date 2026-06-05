@@ -18,12 +18,15 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
     /// </summary>
     public bool BuyWeapon(Tank tank, string weaponId, int count = 1)
     {
-        var weapon = _weapons.Get(weaponId);
-        var total = weapon.Cost * count;
-        if (weapon.Cost <= 0 || tank.Cash < total) return false;
+        if (count <= 0) return false;
 
-        tank.Cash -= total;
+        var weapon = _weapons.Get(weaponId);
+        var total = (long)weapon.Cost * count;
+        if (weapon.Cost <= 0 || tank.Cash < total) return false;
+        if ((long)tank.GetInventoryCount(weaponId) + count > int.MaxValue) return false;
+
         tank.AddWeapon(weaponId, count);
+        tank.Cash -= (int)total;
         return true;
     }
 
@@ -34,10 +37,23 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
     {
         var upgrade = _upgrades.Get(upgradeType);
         if (tank.Cash < upgrade.Cost) return false;
+        if (!CanApplyUpgrade(tank, upgradeType)) return false;
 
+        ApplyUpgrade(tank, upgradeType);
         tank.Cash -= upgrade.Cost;
-        tank.Upgrades.Add(upgradeType);
+        return true;
+    }
 
+    private static bool CanApplyUpgrade(Tank tank, UpgradeType upgradeType) => upgradeType switch
+    {
+        UpgradeType.TracerRounds => tank.TracerRoundCharges < int.MaxValue,
+        UpgradeType.PatriotBattery => tank.PatriotBatteryCharges < int.MaxValue,
+        _ => true
+    };
+
+    private static void ApplyUpgrade(Tank tank, UpgradeType upgradeType)
+    {
+        tank.Upgrades.Add(upgradeType);
         switch (upgradeType)
         {
             case UpgradeType.LightShield:
@@ -50,7 +66,7 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
                 tank.HasParachute = true;
                 break;
             case UpgradeType.RepairKit:
-                tank.Health = Math.Min(tank.MaxHealth, tank.Health + 35);
+                tank.Health = (int)Math.Min(tank.MaxHealth, (long)tank.Health + 35);
                 break;
             case UpgradeType.Battery:
                 tank.Shield += 25;
@@ -62,8 +78,6 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
                 tank.PatriotBatteryCharges++;
                 break;
         }
-
-        return true;
     }
 
     /// <summary>
@@ -72,8 +86,23 @@ public sealed class EconomyService(WeaponCatalog weapons, UpgradeCatalog upgrade
     public void AwardRound(GameState state, TurnOwner winner)
     {
         var playerWon = winner == TurnOwner.Player;
-        state.PlayerTank.Cash += playerWon ? GameConstants.WinReward + GameConstants.KillBonus : GameConstants.LossConsolation;
-        var hitReward = (int)MathF.Floor(state.DamageDealtByPlayer / 10f) * 10;
-        state.PlayerTank.Cash += hitReward;
+        AddCash(state.PlayerTank, playerWon ? GameConstants.WinReward + GameConstants.KillBonus : GameConstants.LossConsolation);
+        AddCash(state.PlayerTank, DamageReward(state.DamageDealtByPlayer));
+    }
+
+    private static int DamageReward(float damageDealt)
+    {
+        if (!float.IsFinite(damageDealt) || damageDealt <= 0) return 0;
+
+        var reward = MathF.Floor(damageDealt / 10f) * 10f;
+        return reward >= int.MaxValue ? int.MaxValue : (int)reward;
+    }
+
+    private static void AddCash(Tank tank, int amount)
+    {
+        if (amount <= 0) return;
+
+        var next = (long)tank.Cash + amount;
+        tank.Cash = next >= int.MaxValue ? int.MaxValue : (int)next;
     }
 }

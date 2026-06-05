@@ -12,9 +12,14 @@ public sealed class CanvasRenderer(HybridCanvasRenderer hybrid, WasmCanvasRender
 
     public RenderMode Mode => _mode;
 
-    public void SetMode(RenderMode mode)
+    public async ValueTask SetModeAsync(RenderMode mode)
     {
         if (_mode == mode) return;
+
+        if (_active is not null)
+        {
+            await _active.DisposeAsync();
+        }
 
         _mode = mode;
         _active = null;
@@ -48,6 +53,7 @@ public sealed class CanvasRenderer(HybridCanvasRenderer hybrid, WasmCanvasRender
     {
         await hybrid.DisposeAsync();
         await fullWasm.DisposeAsync();
+        _active = null;
     }
 
     private async ValueTask<IGameRenderer> EnsureActiveAsync()

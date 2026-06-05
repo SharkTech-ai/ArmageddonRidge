@@ -49,4 +49,16 @@ public sealed class WeaponCatalogTests
         Assert.Equal("Patriot Battery", patriot.DisplayName);
         Assert.InRange(patriot.Cost, 1, 500);
     }
+
+    [Fact]
+    public void UpgradeCatalogOnlyAdvertisesImplementedUpgrades()
+    {
+        var catalog = new UpgradeCatalog();
+        var upgradeTypes = catalog.All.Select(static upgrade => upgrade.Type).ToHashSet();
+
+        Assert.DoesNotContain(UpgradeType.ReflectorShield, upgradeTypes);
+        Assert.DoesNotContain(UpgradeType.Teleporter, upgradeTypes);
+        Assert.DoesNotContain(UpgradeType.WindMeter, upgradeTypes);
+        Assert.Throws<KeyNotFoundException>(() => catalog.Get(UpgradeType.ReflectorShield));
+    }
 }

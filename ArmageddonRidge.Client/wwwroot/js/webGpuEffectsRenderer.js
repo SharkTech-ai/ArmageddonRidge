@@ -46,7 +46,7 @@ let qualityCredit = 0;
 let writeIndex = 0;
 let radialWriteIndex = 0;
 let spawnCount = 0;
-let scheduledImpactId = 0;
+const scheduledImpactIds = new Set();
 let activeRadialCount = 0;
 let activeParticleCount = 0;
 let cachedParticleCount = 0;
@@ -239,6 +239,11 @@ const explosionPresets = {
 };
 
 export async function initialize(baseElement, overlayElement, options = {}) {
+    stopLoop();
+    clearScheduledImpact();
+    clearPatriotState();
+    clearCpuState();
+
     if (overlayElement && typeof overlayElement.getContext === "function") {
         sourceCanvas = baseElement;
         canvas = overlayElement;
@@ -259,9 +264,6 @@ export async function initialize(baseElement, overlayElement, options = {}) {
         enabled = false;
         supported = false;
         fallbackReason = "Disabled";
-        clearScheduledImpact();
-        clearPatriotState();
-        clearCpuState();
         return getStats();
     }
 
@@ -269,9 +271,6 @@ export async function initialize(baseElement, overlayElement, options = {}) {
         enabled = false;
         supported = false;
         fallbackReason = "WebGPU unavailable";
-        clearScheduledImpact();
-        clearPatriotState();
-        clearCpuState();
         return getStats();
     }
 
@@ -290,6 +289,9 @@ export async function initialize(baseElement, overlayElement, options = {}) {
             supported = false;
             fallbackReason = info?.message ? `Device lost: ${info.message}` : "WebGPU device lost";
             stopLoop();
+            clearScheduledImpact();
+            clearPatriotState();
+            clearCpuState();
         });
 
         context = canvas.getContext("webgpu");
@@ -380,13 +382,14 @@ function applyDiagnosticOptions(options = {}) {
 export function spawnShotEffects(payload) {
     if (!enabled || !device) return getStats();
 
+    const safePayload = sanitizeEffectPayload(payload);
     beginSpawnBatch();
-    if (String(payload?.phase ?? "").toLowerCase() === "flight") {
-        spawnFlightEffects(payload);
-        startPatriotInterception(payload);
-        scheduleImpactEffects(payload);
+    if (String(safePayload?.phase ?? "").toLowerCase() === "flight") {
+        spawnFlightEffects(safePayload);
+        startPatriotInterception(safePayload);
+        scheduleImpactEffects(safePayload);
     } else {
-        spawnImpactEffects(payload);
+        spawnImpactEffects(safePayload);
     }
     endSpawnBatch();
 
@@ -398,13 +401,13 @@ export function spawnTerrainEffects(payload) {
         return getStats();
     }
 
-    const wind = Number(payload.wind ?? currentWind);
-    const explosions = payload.explosions ?? [];
+    const wind = finiteNumber(payload?.wind, currentWind);
+    const explosions = sanitizeEffectExplosions(payload?.explosions ?? []);
     beginSpawnBatch();
     for (const explosion of explosions) {
-        const x = Number(explosion.x ?? 0);
-        const radius = Math.max(16, Number(explosion.terrainRadius ?? explosion.radius ?? 40));
-        const centerY = Number(explosion.y ?? surfaceY(x));
+        const x = explosion.x;
+        const radius = Math.max(16, explosion.terrainRadius ?? explosion.radius ?? 40);
+        const centerY = explosion.y;
         const surface = Math.min(centerY, surfaceY(x));
         const preset = resolveExplosionPreset(explosion, payload);
         const rimCount = scaledCount(radius * 0.62, 14, 72);
@@ -443,6 +446,70 @@ export function spawnTerrainEffects(payload) {
     endSpawnBatch();
 
     return getStats();
+}
+
+export function sanitizeEffectPoints(points, minCount = 0) {
+    if (!Array.isArray(points)) {
+        return [];
+    }
+
+    const sanitized = [];
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const x = finitePointCoordinate(point, "x");
+        const y = finitePointCoordinate(point, "y");
+        if (x !== undefined && y !== undefined) {
+            sanitized.push({ x, y });
+        }
+    }
+
+    return sanitized.length >= minCount ? sanitized : [];
+}
+
+export function sanitizeEffectExplosions(explosions) {
+    if (!Array.isArray(explosions)) {
+        return [];
+    }
+
+    const sanitized = [];
+    for (let i = 0; i < explosions.length; i++) {
+        const explosion = explosions[i];
+        const x = finitePointCoordinate(explosion, "x");
+        const y = finitePointCoordinate(explosion, "y");
+        if (x === undefined || y === undefined) {
+            continue;
+        }
+
+        const radius = positiveNumber(payloadValue(explosion, "radius"), 36);
+        if (radius <= 0) {
+            continue;
+        }
+
+        sanitized.push({
+            ...explosion,
+            x,
+            y,
+            radius,
+            terrainRadius: nonNegativeNumber(payloadValue(explosion, "terrainRadius"), radius)
+        });
+    }
+
+    return sanitized;
+}
+
+function sanitizeEffectPayload(payload) {
+    if (!payload) {
+        return { trail: [], trailPointCount: 0, explosions: [] };
+    }
+
+    const trail = sanitizeEffectPoints(payload.trail ?? payload.Trail ?? [], 1);
+    const explosions = sanitizeEffectExplosions(payload.explosions ?? payload.Explosions ?? []);
+    return {
+        ...payload,
+        trail,
+        explosions,
+        trailPointCount: trail.length
+    };
 }
 
 export function getStats() {
@@ -666,10 +733,10 @@ function stopLoop() {
 }
 
 function clearScheduledImpact() {
-    if (scheduledImpactId) {
-        clearTimeout(scheduledImpactId);
-        scheduledImpactId = 0;
+    for (const id of scheduledImpactIds) {
+        clearTimeout(id);
     }
+    scheduledImpactIds.clear();
 }
 
 function frame(now) {
@@ -961,17 +1028,35 @@ function spawnFlightEffects(payload) {
 
 function scheduleImpactEffects(payload) {
     clearScheduledImpact();
-    const delay = estimateImpactDelayMs(payload);
-    scheduledImpactId = setTimeout(() => {
-        scheduledImpactId = 0;
-        if (!enabled || !device) return;
-        beginSpawnBatch();
-        spawnImpactEffects(payload);
-        endSpawnBatch();
-    }, delay);
+    const explosions = payload?.explosions ?? [];
+    const finalDelay = estimateImpactDelayMs(payload);
+    scheduleImpactBatch(payload, explosions.filter(explosion => triggerIndexFor(explosion) < 0), finalDelay, true);
+
+    for (const explosion of explosions) {
+        if (triggerIndexFor(explosion) < 0) {
+            continue;
+        }
+
+        scheduleImpactBatch(payload, [explosion], estimateExplosionDelayMs(payload, explosion), false);
+    }
 }
 
-function estimateImpactDelayMs(payload) {
+function scheduleImpactBatch(payload, explosions, delay, includeShieldRipple) {
+    if (!explosions.length && !includeShieldRipple) {
+        return;
+    }
+
+    const id = setTimeout(() => {
+        scheduledImpactIds.delete(id);
+        if (!enabled || !device) return;
+        beginSpawnBatch();
+        spawnImpactEffects(payload, explosions, includeShieldRipple);
+        endSpawnBatch();
+    }, delay);
+    scheduledImpactIds.add(id);
+}
+
+export function estimateImpactDelayMs(payload) {
     const trailCount = Math.max(2, Number(payload?.trailPointCount ?? payload?.trail?.length ?? 2));
     const weaponId = normalized(payload?.weaponId);
     const visualKind = normalized(payload?.visualKind);
@@ -988,11 +1073,27 @@ function estimateImpactDelayMs(payload) {
         visualDuration = Math.min(1200, Math.max(260, trailCount * 4));
     }
 
-    if (payload?.intercepted) {
+    if (truthyPayloadValue(payload, "intercepted")) {
         visualDuration = Math.max(2900, Math.min(3400, visualDuration * 2.6));
     }
 
     return Math.max(80, Math.min(3400, visualDuration - 45));
+}
+
+export function estimateExplosionDelayMs(payload, explosion) {
+    const triggerIndex = triggerIndexFor(explosion);
+    if (triggerIndex < 0) {
+        return estimateImpactDelayMs(payload);
+    }
+
+    const trailCount = Math.max(2, Number(payload?.trailPointCount ?? payload?.trail?.length ?? 2));
+    const finalDelay = estimateImpactDelayMs(payload);
+    const triggerProgress = clamp(triggerIndex / Math.max(1, trailCount - 1), 0, 1);
+    return Math.max(80, Math.min(3400, finalDelay * triggerProgress));
+}
+
+function triggerIndexFor(explosion) {
+    return Number(payloadValue(explosion, "triggerIndex") ?? -1);
 }
 
 function startPatriotInterception(payload) {
@@ -1287,14 +1388,13 @@ function quadraticScalar(start, control, end, t) {
     return (inverse * inverse * start) + (2 * inverse * t * control) + (t * t * end);
 }
 
-function spawnImpactEffects(payload) {
-    const explosions = payload?.explosions ?? [];
+function spawnImpactEffects(payload, explosions = payload?.explosions ?? [], includeShieldRipple = true) {
     const wind = Number(payload?.wind ?? currentWind);
     for (const explosion of explosions) {
         spawnExplosion(explosion, payload, wind);
     }
 
-    if (payload?.shieldHit) {
+    if (includeShieldRipple && payload?.shieldHit) {
         spawnShieldRipple(payload);
     }
 }
@@ -1961,6 +2061,26 @@ function surfaceY(x) {
 
 function normalized(value) {
     return String(value ?? "").toLowerCase();
+}
+
+function finitePointCoordinate(payload, camelName) {
+    const value = Number(payloadValue(payload, camelName));
+    return Number.isFinite(value) ? value : undefined;
+}
+
+function finiteNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function positiveNumber(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function nonNegativeNumber(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
 }
 
 function randomBetween(min, max) {

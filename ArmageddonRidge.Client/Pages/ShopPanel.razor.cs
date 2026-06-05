@@ -9,6 +9,7 @@ public partial class ShopPanel
     [Parameter] public required IReadOnlyCollection<WeaponDefinition> Weapons { get; set; }
     [Parameter] public required IReadOnlyCollection<UpgradeDefinition> Upgrades { get; set; }
     [Parameter] public required GameState State { get; set; }
+    [Parameter] public bool EnableNuclearWeapons { get; set; } = true;
     [Parameter] public bool TargetingComputerEnabledByDefault { get; set; }
     [Parameter] public required EventCallback<string> OnBuyWeapon { get; set; }
     [Parameter] public required EventCallback<UpgradeType> OnBuyUpgrade { get; set; }
@@ -28,6 +29,7 @@ public partial class ShopPanel
         var weapons = new List<WeaponDefinition>(Weapons.Count);
         foreach (var weapon in Weapons)
         {
+            if (!EnableNuclearWeapons && weapon.Category == WeaponCategory.Nuclear) continue;
             if (weapon.Cost > 0) weapons.Add(weapon);
         }
 

@@ -28,7 +28,7 @@ public sealed class ExplosionService
         if (weapon.RadiationTurns > 0 && weapon.RadiationDamagePerTurn > 0)
         {
             var zoneKind = resolvedVisualKind == ShotVisualKind.Fire ? ShotVisualKind.Lava : resolvedVisualKind;
-            var zone = new RadiationZone(center, weapon.BlastRadius * 0.7f, weapon.RadiationTurns, weapon.RadiationDamagePerTurn, zoneKind);
+            var zone = new RadiationZone(center, weapon.BlastRadius * 0.7f, weapon.RadiationTurns, weapon.RadiationDamagePerTurn, zoneKind, owner.Id);
             zones.Add(zone);
             newZones = [zone];
         }
@@ -48,16 +48,19 @@ public sealed class ExplosionService
     /// <summary>
     /// Applies active radiation or lava zones to a tank and returns total raw damage.
     /// </summary>
-    public float ApplyRadiation(Tank tank, List<RadiationZone> zones)
+    public float ApplyRadiation(Tank tank, List<RadiationZone> zones, Action<RadiationZone, float>? onDamageApplied = null)
     {
         var total = 0f;
         for (var i = 0; i < zones.Count; i++)
         {
             var zone = zones[i];
+            if (!IsValidRadiationZone(zone)) continue;
+
             if (Vector2.DistanceSquared(tank.Center, zone.Center) <= zone.Radius * zone.Radius)
             {
                 total += zone.DamagePerTurn;
                 tank.Health -= (int)MathF.Ceiling(zone.DamagePerTurn);
+                onDamageApplied?.Invoke(zone, zone.DamagePerTurn);
             }
         }
 
@@ -77,6 +80,14 @@ public sealed class ExplosionService
             else zones[i] = zone;
         }
     }
+
+    private static bool IsValidRadiationZone(RadiationZone zone) =>
+        float.IsFinite(zone.Center.X)
+        && float.IsFinite(zone.Center.Y)
+        && float.IsFinite(zone.Radius)
+        && zone.Radius > 0
+        && float.IsFinite(zone.DamagePerTurn)
+        && zone.DamagePerTurn > 0;
 
     private static float ApplyDamage(Tank tank, Vector2 center, WeaponDefinition weapon)
     {

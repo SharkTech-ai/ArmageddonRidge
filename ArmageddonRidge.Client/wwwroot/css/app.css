@@ -832,14 +832,21 @@ select {
     left: 12px;
     display: grid;
     gap: 3px;
+    max-width: min(360px, calc(100% - 104px));
+    max-height: min(360px, calc(100svh - 32px));
+    overflow: auto;
+    overflow-wrap: anywhere;
     font-family: ui-monospace, "Cascadia Mono", monospace;
     font-size: 0.82rem;
 }
 
 .taunt {
     right: 18px;
-    top: 18px;
-    max-width: 260px;
+    top: 166px;
+    max-width: min(360px, calc(100% - 36px));
+    overflow-wrap: anywhere;
+    font-size: 0.86rem;
+    font-weight: 800;
 }
 
 .settings-drawer {
@@ -1030,6 +1037,11 @@ pre {
         gap: 6px;
     }
 
+    .battle-layout.is-battle .battlefield-panel {
+        margin-bottom: clamp(128px, 36vw, 160px);
+        overflow: visible;
+    }
+
     .versus-health {
         padding: 6px;
     }
@@ -1043,10 +1055,27 @@ pre {
         right: 8px;
     }
 
+    .perf-overlay {
+        top: 138px;
+        left: 8px;
+        max-width: calc(100% - 16px);
+        max-height: calc(100svh - 146px);
+        font-size: 0.7rem;
+    }
+
+    .taunt {
+        top: 142px;
+        right: 8px;
+        max-width: calc(100% - 16px);
+        font-size: 0.74rem;
+    }
+
     .battle-console {
         grid-template-columns: 1fr 1fr auto;
         align-items: center;
         width: calc(100% - 16px);
+        top: calc(100% + 8px);
+        bottom: auto;
         padding: 8px 9px 8px 13px;
     }
 

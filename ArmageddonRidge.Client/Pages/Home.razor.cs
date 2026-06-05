@@ -30,6 +30,7 @@ public partial class Home
     private bool _screenShake = true;
     private bool _reducedMotion;
     private bool _targetingComputerEnabledByDefault = true;
+    private bool _enableNuclearWeapons = true;
     private bool _webGpuEffectsEnabled = true;
     private RenderMode _renderMode = RenderMode.Hybrid;
     private float _sfxVolume = 0.9f;
@@ -67,6 +68,8 @@ public partial class Home
     private bool _shotPlaybackInProgress;
     private int? _displayPlayerHealth;
     private int? _displayCpuHealth;
+    private float? _displayPlayerShield;
+    private float? _displayCpuShield;
     private int _terrainRevision;
     private int _lastSentTerrainRevision = -1;
     private CancellationTokenSource? _perfLoop;
@@ -128,6 +131,8 @@ public partial class Home
 
     private string RoundResult => _state?.PlayerTank.IsDestroyed == true ? "CPU wins the ridge" : "Player wins the ridge";
 
+    private string LatestCombatEvent => _state?.EventLog.LastOrDefault() ?? string.Empty;
+
     private string SimdStatusLabel => _renderMode == RenderMode.Hybrid
         ? "N/A"
         : _simdHardwareAccelerated ? "Enabled" : "Disabled";
@@ -168,16 +173,18 @@ public partial class Home
             var save = await Storage.GetAsync<SaveGame>("armageddon-ridge-save");
             if (save is not null)
             {
+                var settings = save.Settings.Normalize();
                 _bestScore = save.BestScore;
-                _difficulty = save.Settings.Difficulty;
-                _sfxVolume = save.Settings.SfxVolume;
-                _screenShake = save.Settings.ScreenShake;
-                _reducedMotion = save.Settings.ReducedMotion;
-                _targetingComputerEnabledByDefault = save.Settings.TargetingComputerEnabledByDefault;
-                _webGpuEffectsEnabled = save.Settings.WebGpuEffectsEnabled;
-                _renderMode = save.Settings.RenderMode;
-                _startingCash = Math.Clamp(save.Settings.StartingCash, 500, 10_000);
-                Renderer.SetMode(_renderMode);
+                _difficulty = settings.Difficulty;
+                _sfxVolume = settings.SfxVolume;
+                _screenShake = settings.ScreenShake;
+                _reducedMotion = settings.ReducedMotion;
+                _targetingComputerEnabledByDefault = settings.TargetingComputerEnabledByDefault;
+                _enableNuclearWeapons = settings.EnableNuclearWeapons;
+                _webGpuEffectsEnabled = settings.WebGpuEffectsEnabled;
+                _renderMode = settings.RenderMode;
+                _startingCash = settings.StartingCash;
+                await Renderer.SetModeAsync(_renderMode);
                 await Audio.SetVolumeAsync(_sfxVolume);
                 StateHasChanged();
             }
@@ -192,7 +199,11 @@ public partial class Home
 
     private async Task NewDuelAsync()
     {
-        _settings = new MatchSettings(Difficulty: _difficulty, StartingCash: _startingCash, TerrainSeed: Random.Shared.Next(10_000, 99_999));
+        _settings = new MatchSettings(
+            Difficulty: _difficulty,
+            StartingCash: _startingCash,
+            TerrainSeed: Random.Shared.Next(10_000, 99_999),
+            EnableNuclearWeapons: _enableNuclearWeapons);
         _state = Engine.NewMatch(_settings);
         ClearDamageFeedback();
         _tracerTrails.Clear();
@@ -237,7 +248,7 @@ public partial class Home
             var cpuShieldBefore = _state.CpuTank.Shield;
             var playerPreShotScene = BuildScene();
             var playerShot = Engine.FireCurrentTurn(_state, _settings, _state.PlayerTank.TurretAngle, _power);
-            HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
+            HoldDisplayedDamage(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
             RecordTracerTrail(playerShot.Trail);
             await PlayResolutionAsync(
                 playerPreShotScene,
@@ -262,7 +273,7 @@ public partial class Home
                 cpuShieldBefore = _state.CpuTank.Shield;
                 var cpuPreShotScene = BuildScene();
                 var cpuShot = Engine.FirePlannedCpuTurn(_state, _settings, cpuPlan);
-                HoldDisplayedHealth(playerHealthBefore, cpuHealthBefore);
+                HoldDisplayedDamage(playerHealthBefore, cpuHealthBefore, playerShieldBefore, cpuShieldBefore);
                 await PlayResolutionAsync(
                     cpuPreShotScene,
                     cpuShot,
@@ -338,7 +349,7 @@ public partial class Home
         finally
         {
             _shotPlaybackInProgress = false;
-            ReleaseDisplayedHealth();
+            ReleaseDisplayedDamage();
         }
 
         await InvokeAsync(StateHasChanged);
@@ -474,12 +485,17 @@ public partial class Home
 
     private async Task BuyWeaponAsync(string weaponId)
     {
-        if (_state is not null && Engine.BuyWeapon(_state, weaponId))
+        if (_state is null || !WeaponIsEnabled(weaponId)) return;
+
+        if (Engine.BuyWeapon(_state, weaponId))
         {
             RefreshPlayerWeapons();
             await Audio.PlayAsync("menu");
         }
     }
+
+    private bool WeaponIsEnabled(string weaponId) =>
+        _enableNuclearWeapons || Weapons.Get(weaponId).Category != WeaponCategory.Nuclear;
 
     private async Task BuyUpgradeAsync(UpgradeType upgrade)
     {
@@ -557,7 +573,7 @@ public partial class Home
             _state.SelectedWeaponId,
             PreviewTrailDto(),
             _tracerTrails.ToArray(),
-            RadiationDto(_state.RadiationZones),
+            RenderPayloadSanitizer.BuildRadiationPayload(_state.RadiationZones),
             TankDto(_state.PlayerTank, _state.Terrain),
             TankDto(_state.CpuTank, _state.Terrain),
             _playerHurt,
@@ -600,24 +616,6 @@ public partial class Home
         return new RenderWeather(type, intensity);
     }
 
-    private static RenderRadiationZone[] RadiationDto(IReadOnlyList<RadiationZone> zones)
-    {
-        var radiation = new RenderRadiationZone[zones.Count];
-        for (var i = 0; i < zones.Count; i++)
-        {
-            var zone = zones[i];
-            radiation[i] = new RenderRadiationZone(
-                zone.Center.X,
-                zone.Center.Y,
-                zone.Radius,
-                zone.TurnsRemaining,
-                zone.VisualKind.ToString(),
-                zone.VisualKind == ShotVisualKind.Lava || zone.VisualKind == ShotVisualKind.Fire);
-        }
-
-        return radiation;
-    }
-
     private bool HasTracerRounds =>
         _state?.PlayerTank.TracerRoundCharges > 0 || _state?.PlayerTank.Upgrades.Contains(UpgradeType.TracerRounds) == true;
 
@@ -631,7 +629,7 @@ public partial class Home
     {
         if (_state is null || !HasTargetingComputer) return EmptyPreview();
 
-        var trail = Engine.PreviewPlayerShot(_state, _state.PlayerTank.TurretAngle, _power);
+        var trail = Engine.PreviewPlayerShot(_state, _settings, _state.PlayerTank.TurretAngle, _power);
         if (trail.Count < 3) return EmptyPreview();
 
         var apexIndex = 0;
@@ -657,12 +655,12 @@ public partial class Home
         path.Add(RenderPoint.FromVector(apex));
 
         var remaining = trail.Count - apexIndex - 1;
-        if (remaining <= 0) return new RenderPreviewTrail(path.ToArray(), []);
+        if (remaining <= 0) return RenderPayloadSanitizer.BuildPreviewPayload(path, []);
 
         var coneSteps = Math.Clamp((int)MathF.Round(remaining * 0.325f), 2, 40);
         var coneCenter = trail[Math.Min(trail.Count - 1, apexIndex + coneSteps)];
         var direction = coneCenter - apex;
-        if (direction.LengthSquared() < 0.001f) return new RenderPreviewTrail(path.ToArray(), []);
+        if (direction.LengthSquared() < 0.001f) return RenderPayloadSanitizer.BuildPreviewPayload(path, []);
 
         direction = Vector2.Normalize(direction);
         var normal = new Vector2(-direction.Y, direction.X);
@@ -672,8 +670,8 @@ public partial class Home
         var left = coneCenter + (normal * (width + jitter));
         var right = coneCenter - (normal * (width - jitter * 0.5f));
 
-        return new RenderPreviewTrail(
-            path.ToArray(),
+        return RenderPayloadSanitizer.BuildPreviewPayload(
+            path,
             [
                 RenderPoint.FromVector(apex),
                 RenderPoint.FromVector(left),
@@ -688,7 +686,10 @@ public partial class Home
         var capacity = TracerTrailCapacity;
         if (capacity <= 0 || trail.Count < 2) return;
 
-        _tracerTrails.Add(WasmRenderCommandBuilder.DownsampleTrailScalar(trail, 96));
+        var payload = RenderPayloadSanitizer.BuildRenderTrailPayload(trail, 96);
+        if (payload.Length < 2) return;
+
+        _tracerTrails.Add(payload);
         while (_tracerTrails.Count > capacity)
         {
             _tracerTrails.RemoveAt(0);
@@ -715,8 +716,11 @@ public partial class Home
 
     private static int TankHealth(Tank tank) => Math.Max(0, tank.Health);
 
-    private static string TankShieldWidth(Tank tank) =>
-        $"{Math.Clamp(MathF.Max(0, tank.Shield) / 120f, 0, 1) * 100:0}%";
+    private float DisplayTankShield(Tank tank, bool player) =>
+        MathF.Max(0, player ? _displayPlayerShield ?? tank.Shield : _displayCpuShield ?? tank.Shield);
+
+    private string TankShieldWidth(Tank tank, bool player) =>
+        $"{Math.Clamp(DisplayTankShield(tank, player) / 120f, 0, 1) * 100:0}%";
 
     private static bool ShieldChanged(float playerShieldBefore, float playerShieldAfter, float cpuShieldBefore, float cpuShieldAfter) =>
         playerShieldAfter < playerShieldBefore || cpuShieldAfter < cpuShieldBefore;
@@ -732,7 +736,7 @@ public partial class Home
         _cpuHurt = TankHealth(_state.CpuTank) < Math.Max(0, cpuHealthBefore);
         _playerShieldHit = _state.PlayerTank.Shield < playerShieldBefore;
         _cpuShieldHit = _state.CpuTank.Shield < cpuShieldBefore;
-        ReleaseDisplayedHealth();
+        ReleaseDisplayedDamage();
 
         if (!AnyTankFeedback) return;
 
@@ -758,21 +762,39 @@ public partial class Home
         _cpuShieldHit = false;
     }
 
-    private void HoldDisplayedHealth(int playerHealthBefore, int cpuHealthBefore)
+    private void HoldDisplayedDamage(int playerHealthBefore, int cpuHealthBefore, float playerShieldBefore, float cpuShieldBefore)
     {
         _displayPlayerHealth = Math.Max(0, playerHealthBefore);
         _displayCpuHealth = Math.Max(0, cpuHealthBefore);
+        _displayPlayerShield = MathF.Max(0, playerShieldBefore);
+        _displayCpuShield = MathF.Max(0, cpuShieldBefore);
     }
 
-    private void ReleaseDisplayedHealth()
+    private void ReleaseDisplayedDamage()
     {
         _displayPlayerHealth = null;
         _displayCpuHealth = null;
+        _displayPlayerShield = null;
+        _displayCpuShield = null;
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs args)
     {
         if (_state is null) return;
+
+        if (args.Key == "Escape")
+        {
+            ToggleSettings();
+            return;
+        }
+
+        if (args.Key == "`")
+        {
+            TogglePerf();
+            return;
+        }
+
+        if (!CanFirePlayer) return;
 
         switch (args.Key)
         {
@@ -795,12 +817,6 @@ public partial class Home
                 break;
             case "Tab":
                 CycleWeapon();
-                break;
-            case "Escape":
-                ToggleSettings();
-                break;
-            case "`":
-                TogglePerf();
                 break;
         }
     }
@@ -841,8 +857,16 @@ public partial class Home
     private void TogglePerf()
     {
         _showPerf = !_showPerf;
-        if (_showPerf) StartPerfLoop();
-        else StopPerfLoop();
+        if (_showPerf)
+        {
+            StopFpsButtonLoop();
+            StartPerfLoop();
+        }
+        else
+        {
+            StopPerfLoop();
+            SyncBattleFpsLoop();
+        }
     }
 
     private void ToggleSettings() => _settingsOpen = !_settingsOpen;
@@ -872,6 +896,14 @@ public partial class Home
         if (_state?.Phase == GamePhase.Battle) await RenderSceneAsync();
     }
 
+    private async Task HandleNuclearWeaponsChangedAsync(ChangeEventArgs args)
+    {
+        _enableNuclearWeapons = CheckedValue(args);
+        _settings = _settings with { EnableNuclearWeapons = _enableNuclearWeapons };
+        RefreshPlayerWeapons();
+        await PersistSaveAsync();
+    }
+
     private async Task HandleWebGpuEffectsChangedAsync(ChangeEventArgs args)
     {
         _webGpuEffectsEnabled = CheckedValue(args);
@@ -887,10 +919,10 @@ public partial class Home
 
     private async Task HandleRenderModeChangedAsync(ChangeEventArgs args)
     {
-        if (!Enum.TryParse<RenderMode>(args.Value?.ToString(), out var mode)) return;
+        if (!Enum.TryParse<RenderMode>(args.Value?.ToString(), out var mode) || !Enum.IsDefined(mode)) return;
 
         _renderMode = mode;
-        Renderer.SetMode(_renderMode);
+        await Renderer.SetModeAsync(_renderMode);
         _rendererReady = false;
         _lastSentTerrainRevision = -1;
         await PersistSaveAsync();
@@ -919,6 +951,7 @@ public partial class Home
                 SfxVolume: _sfxVolume,
                 ScreenShake: _screenShake,
                 ReducedMotion: _reducedMotion,
+                EnableNuclearWeapons: _enableNuclearWeapons,
                 Difficulty: _difficulty,
                 StartingCash: _startingCash,
                 TargetingComputerEnabledByDefault: _targetingComputerEnabledByDefault,
@@ -929,8 +962,15 @@ public partial class Home
 
     public async ValueTask DisposeAsync()
     {
+        var fpsButtonLoopTask = _fpsButtonLoopTask;
+        var perfLoopTask = _perfLoopTask;
         StopFpsButtonLoop();
         StopPerfLoop();
+        if (fpsButtonLoopTask is not null)
+            await AwaitQuietlyAsync(fpsButtonLoopTask);
+        if (perfLoopTask is not null)
+            await AwaitQuietlyAsync(perfLoopTask);
+
         await Effects.DisposeAsync();
         await Renderer.DisposeAsync();
         await Audio.DisposeAsync();
@@ -1092,12 +1132,14 @@ public partial class Home
         {
             _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
             _showPerf = false;
+            SyncBattleFpsLoop();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
         {
             _state?.EventLog.Add($"Performance overlay polling stopped: {ex.Message}");
             _showPerf = false;
+            SyncBattleFpsLoop();
             await InvokeAsync(StateHasChanged);
         }
         finally
@@ -1124,6 +1166,7 @@ public partial class Home
         for (var i = 0; i < _allWeapons.Length; i++)
         {
             var weapon = _allWeapons[i];
+            if (!WeaponIsEnabled(weapon.Id)) continue;
             if (_state.PlayerTank.HasWeapon(weapon.Id) || weapon.Id == WeaponIds.PeaShell) weapons.Add(weapon);
         }
 

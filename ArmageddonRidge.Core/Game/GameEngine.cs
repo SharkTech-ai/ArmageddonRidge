@@ -82,6 +82,8 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         state.CurrentTurn = TurnOwner.Player;
         state.Wind = NextWind(state);
         ApplyStartOfTurnEffects(state);
+        state.EventLog.Add($"Round {state.RoundNumber}. New ridge. Same grudge.");
+        EndRoundIfWon(state);
     }
 
     /// <summary>
@@ -159,7 +161,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             taunt = plan.Taunt;
         }
 
-        if (!owner.HasWeapon(weaponId))
+        if (!owner.HasWeapon(weaponId) || !WeaponIsEnabled(weaponId, settings))
             weaponId = WeaponIds.PeaShell;
 
         var weapon = Weapons.Get(weaponId);
@@ -239,18 +241,18 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             state.DamageDealtByCpu += damage;
         }
 
-        var winner = Winner(state);
-        if (winner is not null)
-        {
-            Economy.AwardRound(state, winner.Value);
-            state.Phase = GamePhase.RoundOver;
-            events.Add(winner == TurnOwner.Player ? "Victory. The ridge salutes your math." : "Defeat. The CPU is insufferable now.");
-        }
-        else
+        if (Winner(state) is null)
         {
             state.CurrentTurn = TurnManager.OpponentOf(state.CurrentTurn);
             state.Wind = NextWind(state);
             ApplyStartOfTurnEffects(state);
+        }
+
+        var winner = EndRoundIfWon(state);
+        if (winner is not null)
+        {
+            events.Add(winner == TurnOwner.Player ? "Victory. The ridge salutes your math." : "Defeat. The CPU is insufferable now.");
+            state.EventLog.Add(events[^1]);
         }
 
         var perf = new PerformanceSample(simulationWatch.Elapsed.TotalMilliseconds, terrainWatch.Elapsed.TotalMilliseconds, cpuPlanningMs, simulation.Trail.Count, touched);
@@ -268,6 +270,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     /// </summary>
     public bool BuyUpgrade(GameState state, UpgradeType upgradeType) => Economy.BuyUpgrade(state.PlayerTank, upgradeType);
 
+    private bool WeaponIsEnabled(string weaponId, MatchSettings settings) =>
+        settings.EnableNuclearWeapons || Weapons.Get(weaponId).Category != WeaponCategory.Nuclear;
+
     private static bool HasPatriotInterceptor(Tank tank) =>
         tank.PatriotBatteryCharges > 0 || tank.Upgrades.Contains(UpgradeType.PatriotBattery);
 
@@ -283,12 +288,12 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     /// <summary>
     /// Produces the approximate player shot preview used by the targeting computer.
     /// </summary>
-    public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, float angle, int power)
+    public IReadOnlyList<Vector2> PreviewPlayerShot(GameState state, MatchSettings settings, float angle, int power)
     {
         if (state.Phase != GamePhase.Battle || state.CurrentTurn != TurnOwner.Player)
             return [];
 
-        var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId)
+        var weaponId = state.PlayerTank.HasWeapon(state.SelectedWeaponId) && WeaponIsEnabled(state.SelectedWeaponId, settings)
             ? state.SelectedWeaponId
             : WeaponIds.PeaShell;
         var weapon = Weapons.Get(weaponId);
@@ -317,6 +322,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             return SimulateGuidedDarkEagle(owner, opponent, weapon);
 
         var primary = _projectileSimulator.Simulate(state.Terrain, owner, opponent, weapon, angle, power, state.Wind);
+        if (weapon.BehaviorType == WeaponBehaviorType.BunkerBuster)
+            return SimulateBunkerBuster(primary, owner, weapon);
+
         if (weapon.BehaviorType == WeaponBehaviorType.MultiStagePenetrator)
             return SimulateMultiStagePenetrator(primary, owner, weapon);
 
@@ -391,6 +399,44 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             [new ExplosionResult(target, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Missile)]);
     }
 
+    private static WeaponSimulation SimulateBunkerBuster(ProjectileSimulation primary, Tank owner, WeaponDefinition weapon)
+    {
+        if (primary.StopReason != ProjectileStopReason.TerrainHit)
+        {
+            return new WeaponSimulation(
+                primary.Trail,
+                primary.ImpactPoint,
+                [new ExplosionResult(primary.ImpactPoint, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], VisualKindFor(weapon))]);
+        }
+
+        var trail = new List<Vector2>(primary.Trail.Count + 12);
+        trail.AddRange(primary.Trail);
+        if (trail.Count == 0)
+            trail.Add(primary.ImpactPoint);
+
+        var impact = primary.ImpactPoint;
+        var previous = trail.Count > 1 ? trail[^2] : owner.Center;
+        var direction = impact - previous;
+        if (direction.LengthSquared() < 0.001f)
+            direction = new Vector2(owner.IsCpu ? -0.25f : 0.25f, 1f);
+
+        direction = NormalizeOrFallback(
+            new Vector2(direction.X * 0.35f, MathF.Max(MathF.Abs(direction.Y), 0.86f)),
+            new Vector2(owner.IsCpu ? -0.25f : 0.25f, 1f));
+        const int burrowSteps = 12;
+        var burrowDistance = Math.Clamp(weapon.TerrainRadius * 0.72f, 42f, 86f);
+        for (var i = 1; i <= burrowSteps; i++)
+        {
+            var t = i / (float)burrowSteps;
+            trail.Add(ClampToWorld(impact + (direction * burrowDistance * t)));
+        }
+
+        return new WeaponSimulation(
+            trail,
+            trail[^1],
+            [new ExplosionResult(trail[^1], weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], VisualKindFor(weapon))]);
+    }
+
     private static WeaponSimulation SimulateLaser(TerrainMask terrain, Tank owner, Tank opponent, WeaponDefinition weapon)
     {
         const float BeamStep = 4f;
@@ -422,24 +468,27 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             previous = point;
         }
 
-        if (ProjectileSimulator.SweptHitsTankOrShield(origin, target, opponent, terrain, BeamPadding, out var laserHit, out _))
+        if (ProjectileSimulator.SweptHitsTankOrShield(origin, target, opponent, terrain, BeamPadding, out var laserHit, out var stopReason))
         {
             trail[^1] = laserHit;
-            return new WeaponSimulation(trail, laserHit, [LaserExplosion(laserHit, weapon)]);
+            var visualKind = stopReason == ProjectileStopReason.ShieldHit
+                ? ShotVisualKind.ShieldHit
+                : ShotVisualKind.Laser;
+            return new WeaponSimulation(trail, laserHit, [LaserExplosion(laserHit, weapon, visualKind)]);
         }
 
         return new WeaponSimulation(trail, trail[^1], []);
     }
 
-    private static ExplosionResult LaserExplosion(Vector2 center, WeaponDefinition weapon) =>
-        new(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], ShotVisualKind.Laser);
+    private static ExplosionResult LaserExplosion(Vector2 center, WeaponDefinition weapon, ShotVisualKind visualKind = ShotVisualKind.Laser) =>
+        new(center, weapon.BlastRadius, weapon.TerrainRadius, 0, 0, false, false, [], visualKind);
 
     private static Vector2 LaserOrigin(Tank owner, Tank opponent)
     {
         var delta = opponent.Center - owner.Center;
         if (delta.LengthSquared() <= 0.001f) return owner.Center;
 
-        return ClampToWorld(owner.Center + (Vector2.Normalize(delta) * 32f));
+        return ClampToWorld(owner.Center + (NormalizeOrFallback(delta, new Vector2(owner.IsCpu ? -1f : 1f, 0f)) * 32f));
     }
 
     private static Vector2 RefineTerrainHit(TerrainMask terrain, Vector2 clear, Vector2 solid)
@@ -467,7 +516,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         if (direction.LengthSquared() < 0.001f)
             direction = new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f);
 
-        direction = Vector2.Normalize(new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)));
+        direction = NormalizeOrFallback(
+            new Vector2(direction.X * 0.42f, MathF.Max(MathF.Abs(direction.Y), 0.68f)),
+            new Vector2(owner.IsCpu ? -0.45f : 0.45f, 0.9f));
         var firstTriggerIndex = Math.Max(0, trail.Count - 1);
         const int burrowSteps = 18;
         const float burrowDistance = 96f;
@@ -535,6 +586,18 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     private static Vector2 ClampToWorld(Vector2 point) => new(
         Math.Clamp(point.X, 0, GameConstants.WorldWidth - 1),
         Math.Clamp(point.Y, 0, GameConstants.WorldHeight - 1));
+
+    private static Vector2 NormalizeOrFallback(Vector2 vector, Vector2 fallback)
+    {
+        var lengthSquared = vector.LengthSquared();
+        if (float.IsFinite(lengthSquared) && lengthSquared > 0.0001f)
+            return Vector2.Normalize(vector);
+
+        var fallbackLengthSquared = fallback.LengthSquared();
+        return float.IsFinite(fallbackLengthSquared) && fallbackLengthSquared > 0.0001f
+            ? Vector2.Normalize(fallback)
+            : Vector2.UnitX;
+    }
 
     private static Vector2 GuidedLaunchPoint(Tank tank)
     {
@@ -635,8 +698,32 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
     private void ApplyStartOfTurnEffects(GameState state)
     {
         var active = state.CurrentTurn == TurnOwner.Player ? state.PlayerTank : state.CpuTank;
-        _explosionService.ApplyRadiation(active, state.RadiationZones);
+        _explosionService.ApplyRadiation(active, state.RadiationZones, (zone, damage) => CreditHazardDamage(state, active, zone, damage));
         _explosionService.TickRadiation(state.RadiationZones);
+    }
+
+    private TurnOwner? EndRoundIfWon(GameState state)
+    {
+        var winner = Winner(state);
+        if (winner is null) return null;
+
+        if (state.Phase != GamePhase.RoundOver)
+        {
+            Economy.AwardRound(state, winner.Value);
+            state.Phase = GamePhase.RoundOver;
+        }
+
+        return winner;
+    }
+
+    private static void CreditHazardDamage(GameState state, Tank damagedTank, RadiationZone zone, float damage)
+    {
+        if (damage <= 0 || string.IsNullOrWhiteSpace(zone.OwnerTankId)) return;
+
+        if (zone.OwnerTankId == state.PlayerTank.Id && damagedTank.Id == state.CpuTank.Id)
+            state.DamageDealtByPlayer += damage;
+        else if (zone.OwnerTankId == state.CpuTank.Id && damagedTank.Id == state.PlayerTank.Id)
+            state.DamageDealtByCpu += damage;
     }
 
     private TurnOwner? Winner(GameState state)
