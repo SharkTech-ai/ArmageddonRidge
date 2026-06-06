@@ -17,8 +17,10 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
 {
     private readonly TerrainGenerator _terrainGenerator = new();
     private readonly TerrainDeformer _terrainDeformer = new();
+    private readonly TerrainSlumpingService _terrainSlumping = new();
     private readonly ProjectileSimulator _projectileSimulator = new();
     private readonly ExplosionService _explosionService = new();
+    private readonly VisualPhysicsPayloadService _visualPhysics = new();
 
     /// <summary>
     /// Gets the weapon catalog used by this engine.
@@ -149,6 +151,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         var owner = state.CurrentTurn == TurnOwner.Player ? state.PlayerTank : state.CpuTank;
         var opponent = state.CurrentTurn == TurnOwner.Player ? state.CpuTank : state.PlayerTank;
         var weaponId = state.CurrentTurn == TurnOwner.Player ? state.SelectedWeaponId : WeaponIds.PeaShell;
+        var shotWind = state.Wind;
         var taunt = string.Empty;
 
         if (state.CurrentTurn == TurnOwner.Cpu)
@@ -191,6 +194,17 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         else
         {
             touched = ResolveExplosions(state, owner, opponent, weapon, simulation.Explosions, resolvedExplosions);
+        }
+
+        TerrainSlumpPayload slumpPayload;
+        if (touched > 0 && !intercepted)
+        {
+            slumpPayload = _terrainSlumping.Relax(state.Terrain, resolvedExplosions);
+            touched += slumpPayload.Columns.Length;
+        }
+        else
+        {
+            slumpPayload = new TerrainSlumpPayload([], 0, false);
         }
 
         terrainWatch.Stop();
@@ -255,9 +269,31 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             state.EventLog.Add(events[^1]);
         }
 
-        var perf = new PerformanceSample(simulationWatch.Elapsed.TotalMilliseconds, terrainWatch.Elapsed.TotalMilliseconds, cpuPlanningMs, simulation.Trail.Count, touched);
+        var visualWatch = Stopwatch.StartNew();
+        var visualKind = VisualKindFor(weapon);
+        var visualPhysics = _visualPhysics.Build(
+            state.Terrain,
+            state.PlayerTank,
+            state.CpuTank,
+            resolvedExplosions,
+            weapon.Id,
+            owner.Id,
+            visualKind,
+            shotWind,
+            slumpPayload,
+            false);
+        visualWatch.Stop();
+
+        var perf = new PerformanceSample(
+            simulationWatch.Elapsed.TotalMilliseconds,
+            terrainWatch.Elapsed.TotalMilliseconds,
+            cpuPlanningMs,
+            simulation.Trail.Count,
+            touched,
+            slumpPayload.Columns.Length,
+            visualWatch.Elapsed.TotalMilliseconds);
         state.LastPerformance = perf;
-        return new ShotResolution(weapon.Id, owner.Id, simulation.Trail, resolvedExplosions, events, winner is not null, winner, perf, VisualKindFor(weapon), intercepted, interceptPoint);
+        return new ShotResolution(weapon.Id, owner.Id, simulation.Trail, resolvedExplosions, events, winner is not null, winner, perf, visualKind, intercepted, interceptPoint, visualPhysics);
     }
 
     /// <summary>

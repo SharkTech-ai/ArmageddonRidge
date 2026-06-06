@@ -5,6 +5,7 @@ using ArmageddonRidge.Core;
 using ArmageddonRidge.Core.Content;
 using ArmageddonRidge.Core.Game;
 using ArmageddonRidge.Core.Models;
+using ArmageddonRidge.Core.Physics;
 using ArmageddonRidge.Core.Terrain;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -590,8 +591,10 @@ public partial class Home
 
     private void MarkTerrainChanged() => _terrainRevision++;
 
-    private static RenderTank TankDto(Tank tank, TerrainMask terrain) =>
-        new(
+    private static RenderTank TankDto(Tank tank, TerrainMask terrain)
+    {
+        var pose = new TankPoseService().BuildPose(tank, terrain, [], reducedMotion: true);
+        return new(
             tank.Id,
             tank.Position.X,
             tank.Position.Y,
@@ -600,7 +603,17 @@ public partial class Home
             MathF.Max(0, tank.Shield),
             tank.IsCpu,
             terrain.GetSurfaceY(tank.Position.X),
-            MathF.Max(0, tank.Position.Y - terrain.GetSurfaceY(tank.Position.X)));
+            MathF.Max(0, tank.Position.Y - terrain.GetSurfaceY(tank.Position.X)),
+            pose.HullAngleDegrees,
+            pose.VerticalOffset,
+            pose.LeftTreadY,
+            pose.RightTreadY,
+            pose.SuspensionCompression,
+            pose.RecoilX,
+            pose.RecoilY,
+            pose.RockAngleDegrees,
+            pose.ShadowSquash);
+    }
 
     private static RenderWeather WeatherDto(GameState state)
     {

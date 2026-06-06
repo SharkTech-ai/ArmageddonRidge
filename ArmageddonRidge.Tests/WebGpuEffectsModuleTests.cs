@@ -186,6 +186,55 @@ public sealed class WebGpuEffectsModuleTests
             $"WebGPU special weapon timing smoke failed with exit code {process.ExitCode}.{Environment.NewLine}{output}{Environment.NewLine}{error}");
     }
 
+    [Fact]
+    public async Task WebGpuVisualPhysicsSanitizerDropsMalformedEntries()
+    {
+        var repoRoot = FindRepoRoot();
+        var modulePath = Path.GetFullPath(Path.Combine(repoRoot, "ArmageddonRidge.Client", "wwwroot", "js", "webGpuEffectsRenderer.js"));
+        var moduleUri = new Uri(modulePath).AbsoluteUri;
+        var script = $$"""
+            const effects = await import({{JsonSerializer.Serialize(moduleUri)}});
+            const payload = effects.sanitizeVisualPhysics({
+                slump: { columns: [{ x: 3, fromY: 60, toY: 70 }, { x: 4, fromY: Number.NaN, toY: 72 }] },
+                debris: [{ x: 10, y: 20, velocityX: '12' }, { x: Number.NaN, y: 20 }],
+                impacts: [{ x: 30, y: 40, material: 'Shield', shieldLike: true }],
+                lingering: [{ x: 50, y: 60, windX: -12, visualKind: 'Lava' }],
+                shockwaves: [{ x: 70, y: 80, radius: 90, intensity: 120 }, { x: 10, y: 20, radius: 0 }]
+            });
+
+            if (payload.slump.columns.length !== 1 || payload.debris.length !== 1 || payload.impacts.length !== 1 || payload.lingering.length !== 1 || payload.shockwaves.length !== 1) {
+                throw new Error(`Unexpected visual physics payload ${JSON.stringify(payload)}`);
+            }
+
+            if (!payload.impacts[0].shieldLike || payload.shockwaves[0].intensity !== 120) {
+                throw new Error(`Unexpected visual physics values ${JSON.stringify(payload)}`);
+            }
+            """;
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "node",
+                ArgumentList = { "--input-type=module", "--eval", script },
+                WorkingDirectory = repoRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        Assert.True(process.Start(), "Failed to start node for WebGPU visual physics sanitizer smoke.");
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.True(
+            process.ExitCode == 0,
+            $"WebGPU visual physics sanitizer smoke failed with exit code {process.ExitCode}.{Environment.NewLine}{output}{Environment.NewLine}{error}");
+    }
+
     private static string FindRepoRoot()
     {
         var dir = AppContext.BaseDirectory;

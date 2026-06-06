@@ -49,7 +49,16 @@ public sealed record RenderTank(
     float Shield,
     bool IsCpu,
     float TerrainY,
-    float BuriedDepth);
+    float BuriedDepth,
+    float HullAngle = 0,
+    float VerticalOffset = 0,
+    float LeftTreadY = 0,
+    float RightTreadY = 0,
+    float SuspensionCompression = 0,
+    float RecoilX = 0,
+    float RecoilY = 0,
+    float RockAngle = 0,
+    float ShadowSquash = 1);
 
 public sealed record RenderFrame(RenderWorld World, IReadOnlyList<RenderCommand> Commands);
 

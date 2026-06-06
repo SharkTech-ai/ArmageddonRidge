@@ -29,7 +29,7 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
     {
         if (_module is null) return;
 
-        await PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId, resolution.VisualKind.ToString());
+        await PlayShotAsync(scene, resolution.Trail, resolution.Explosions, screenShake, resolution.WeaponId, resolution.Intercepted, resolution.InterceptPoint, resolution.OwnerTankId, resolution.VisualKind.ToString(), resolution.VisualPhysics);
     }
 
     public async ValueTask<RenderStats?> GetStatsAsync()
@@ -67,13 +67,14 @@ public sealed class HybridCanvasRenderer(IJSRuntime js) : IGameRenderer
         bool intercepted = false,
         Vector2? interceptPoint = null,
         string? ownerTankId = null,
-        string? visualKind = null)
+        string? visualKind = null,
+        ArmageddonRidge.Core.Physics.VisualPhysicsPayload? visualPhysics = null)
     {
         if (_module is null) return;
 
         var trailPayload = RenderPayloadSanitizer.BuildTrailPayload(trail);
         var explosionPayload = RenderPayloadSanitizer.BuildExplosionPayload(explosions, weaponId);
-        var playbackOptions = RenderPayloadSanitizer.BuildPlaybackOptions(intercepted, interceptPoint, ownerTankId, visualKind);
+        var playbackOptions = RenderPayloadSanitizer.BuildPlaybackOptions(intercepted, interceptPoint, ownerTankId, visualKind, visualPhysics);
 
         await _module.InvokeVoidAsync(
             "playShot",
