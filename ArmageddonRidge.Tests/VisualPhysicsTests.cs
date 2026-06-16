@@ -133,6 +133,20 @@ public sealed class VisualPhysicsTests
     }
 
     [Fact]
+    public void NuclearAirProfilePreservesReadableBallisticRange()
+    {
+        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray());
+        var player = Tank("player", 160, terrain, 42);
+        var cpu = Tank("cpu", 980, terrain, 138);
+        var weapon = new WeaponCatalog().Get(WeaponIds.TacticalNuke);
+        var simulator = new ProjectileSimulator();
+
+        var nuke = simulator.Simulate(terrain, player, cpu, weapon, 42, 70, 0);
+        Assert.InRange(nuke.ImpactPoint.X, 650, 820);
+        Assert.True(nuke.Trail.Count > 40);
+    }
+
+    [Fact]
     public void GameResolutionCarriesVisualPhysicsPayload()
     {
         var engine = new GameEngine(new WeaponCatalog(), new UpgradeCatalog());

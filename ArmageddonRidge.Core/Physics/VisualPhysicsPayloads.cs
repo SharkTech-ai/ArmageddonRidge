@@ -107,8 +107,7 @@ public readonly record struct ProjectileAirProfile(
             WeaponBehaviorType.DroneSwarm => new ProjectileAirProfile(0.038f, 1.35f, 4f, 0.08f, 420f),
             WeaponBehaviorType.Napalm => new ProjectileAirProfile(0.03f, 1.18f, 0f, 0.01f, 460f),
             WeaponBehaviorType.BunkerBuster or WeaponBehaviorType.MultiStagePenetrator => new ProjectileAirProfile(0.008f, 0.18f, 0f, 0f, 760f),
-            WeaponBehaviorType.Dirt or WeaponBehaviorType.Excavator => ProjectileBallisticEquivalent,
-            WeaponBehaviorType.Nuclear => new ProjectileAirProfile(0.014f, 0.55f, 0f, 0f, 620f),
+            WeaponBehaviorType.Dirt or WeaponBehaviorType.Excavator or WeaponBehaviorType.Nuclear => ProjectileBallisticEquivalent,
             _ => new ProjectileAirProfile(0.012f, 0.82f, 0f, 0f, 620f)
         };
 
