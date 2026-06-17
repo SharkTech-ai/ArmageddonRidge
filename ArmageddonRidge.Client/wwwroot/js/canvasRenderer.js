@@ -112,6 +112,7 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
         playbackOptions.patriot = patriotPlayback;
     }
 
+    const finalDestruction = sanitizeCanvasDestruction(playbackOptions.finalShotDestruction ?? playbackOptions.FinalShotDestruction);
     const activeExplosions = Array.isArray(explosions) ? explosions : Array.from(explosions ?? []);
     applyVisualTankPoses(shotScene, visualPhysics?.tankPoses ?? []);
     const stagedExplosions = [];
@@ -164,11 +165,19 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
 
         const finish = () => {
             if (!finalExplosions.length) {
-                scheduleShotTimeout(complete, 120);
+                if (!finalDestruction) {
+                    scheduleShotTimeout(complete, 120);
+                    return;
+                }
+
+                animateFinalShotDestruction(scene, playbackOptions, screenShake)
+                    .then(complete)
+                    .catch(fail);
                 return;
             }
 
-            animateExplosions(scene, finalExplosions, screenShake, visualPhysics)
+            animateExplosions(scene, finalExplosions, screenShake, playbackOptions)
+                .then(() => animateFinalShotDestruction(scene, playbackOptions, screenShake))
                 .then(complete)
                 .catch(fail);
         };
@@ -189,7 +198,8 @@ export async function playShot(scene, trail, explosions, screenShake, weaponId, 
                     ? patriotIncomingPathProgress(playbackOptions.patriot, patriotTimelineProgress)
                     : basePathProgress;
                 const count = Math.max(1, Math.floor(points.length * pathProgress));
-                const shake = screenShake && highImpactShake ? Math.sin(now * 0.08) * (1 - t) * 8 : 0;
+                const flightShakeLimit = finalDestruction ? (finalDestruction.mutual ? 3.2 : 2.4) : 8;
+                const shake = screenShake && highImpactShake ? Math.sin(now * 0.08) * (1 - t) * flightShakeLimit : 0;
                 drawScene(shotScene, shake, -shake * 0.4);
                 drawTrail(points, count, weaponId, activeExplosions, playbackOptions.visualKind);
                 drawPatriotCountermeasure(shotScene, playbackOptions, patriotTimelineProgress, holdProgress);
@@ -572,7 +582,7 @@ function setWorldTransform(offsetX = 0, offsetY = 0, world = { width: 1200, heig
     ctx.setTransform(scale, 0, 0, scale, left + offsetX, top + offsetY);
 }
 
-function drawScene(scene, offsetX, offsetY) {
+function drawScene(scene, offsetX, offsetY, options = {}) {
     clearCanvas();
     ctx.save();
     setWorldTransform(offsetX, offsetY, scene.world);
@@ -584,8 +594,13 @@ function drawScene(scene, offsetX, offsetY) {
     drawTracerTrails(scene.tracerTrails ?? []);
     drawAimPreview(scene.previewTrail ?? []);
     const now = performance.now();
-    drawTank(scene.player, "playerTank", isTankHurt(scene.player, scene, "player"), isTankShieldHit(scene.player, scene, "player"), now);
-    drawTank(scene.cpu, "cpuTank", isTankHurt(scene.cpu, scene, "cpu"), isTankShieldHit(scene.cpu, scene, "cpu"), now);
+    const hiddenTankIds = options.hiddenTankIds ?? new Set();
+    if (!hiddenTankIds.has(String(scene.player?.id ?? "")) && Number(scene.player?.health ?? 1) > 0) {
+        drawTank(scene.player, "playerTank", isTankHurt(scene.player, scene, "player"), isTankShieldHit(scene.player, scene, "player"), now);
+    }
+    if (!hiddenTankIds.has(String(scene.cpu?.id ?? "")) && Number(scene.cpu?.health ?? 1) > 0) {
+        drawTank(scene.cpu, "cpuTank", isTankHurt(scene.cpu, scene, "cpu"), isTankShieldHit(scene.cpu, scene, "cpu"), now);
+    }
     if (String(scene.phase ?? "").toLowerCase() !== "battle") {
         drawWind(scene.wind);
     }
@@ -930,15 +945,16 @@ function drawBuildings(buildings, scene) {
         const damage = clamp01(Number(building?.damageFraction ?? building?.DamageFraction ?? 0));
         const collapsed = Boolean(building?.collapsed ?? building?.Collapsed) || damage >= 0.98;
         const kind = String(building?.kind ?? building?.Kind ?? "apartment").toLowerCase();
+        const penaltyValue = Math.max(0, Number(building?.penaltyValue ?? building?.PenaltyValue ?? 0));
         const lastDamagedShot = Number(building?.lastDamagedShot ?? building?.LastDamagedShot ?? -1);
         const shotIndex = Number(scene?.shotsFired ?? scene?.ShotsFired ?? scene?.round ?? 0);
         const freshlyHit = Number.isFinite(lastDamagedShot) && lastDamagedShot >= 0 && lastDamagedShot >= shotIndex - 1;
-        drawBuildingSprite(x, y, width, fullHeight, damage, collapsed, kind, freshlyHit, i);
+        drawBuildingSprite(x, y, width, fullHeight, damage, collapsed, kind, freshlyHit, penaltyValue, i);
     }
     ctx.restore();
 }
 
-function drawBuildingSprite(x, groundY, width, fullHeight, damage, collapsed, kind, freshlyHit, seed) {
+function drawBuildingSprite(x, groundY, width, fullHeight, damage, collapsed, kind, freshlyHit, penaltyValue, seed) {
     const standingHeight = collapsed ? fullHeight * 0.18 : fullHeight * (1 - damage * 0.46);
     const left = x - width * 0.5;
     const top = groundY - standingHeight;
@@ -953,6 +969,7 @@ function drawBuildingSprite(x, groundY, width, fullHeight, damage, collapsed, ki
 
     ctx.save();
     if (!collapsed) {
+        drawCivilianHazardMarker(x, groundY, width, fullHeight, damage, penaltyValue, freshlyHit);
         ctx.translate(x, groundY);
         ctx.rotate(lean * Math.PI / 180);
         ctx.translate(-x, -groundY);
@@ -982,6 +999,36 @@ function drawBuildingSprite(x, groundY, width, fullHeight, damage, collapsed, ki
     if (freshlyHit || damage > 0.45) {
         drawCivilianWarning(x, top - 10, damage, collapsed);
     }
+    ctx.restore();
+}
+
+function drawCivilianHazardMarker(x, groundY, width, fullHeight, damage, penaltyValue, freshlyHit) {
+    const pulse = freshlyHit ? 1 : 0.5 + Math.sin(performance.now() * 0.005 + x * 0.02) * 0.5;
+    const danger = clamp(0.34 + damage * 0.42 + (freshlyHit ? 0.22 : 0), 0.28, 0.82);
+    const label = penaltyValue > 0 ? `CIV $${Math.round(penaltyValue)}` : "CIV";
+
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 212, 93, ${0.04 + danger * 0.08})`;
+    ctx.strokeStyle = `rgba(255, 212, 93, ${0.2 + danger * 0.22 + pulse * 0.08})`;
+    ctx.lineWidth = freshlyHit ? 2.6 : 1.8;
+    ctx.setLineDash([5, 7]);
+    ctx.beginPath();
+    ctx.ellipse(x, groundY - fullHeight * 0.46, width * 0.74 + pulse * 2, fullHeight * 0.53 + pulse * 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const labelY = groundY - fullHeight - 20;
+    const labelWidth = Math.max(54, Math.min(82, label.length * 7.2));
+    ctx.fillStyle = `rgba(32, 22, 18, ${0.72 + damage * 0.14})`;
+    ctx.fillRect(x - labelWidth * 0.5, labelY - 12, labelWidth, 16);
+    ctx.strokeStyle = `rgba(255, 212, 93, ${0.34 + pulse * 0.16})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - labelWidth * 0.5 + 0.5, labelY - 11.5, labelWidth - 1, 15);
+    ctx.fillStyle = "#ffd45d";
+    ctx.font = "800 9px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(label, x, labelY);
     ctx.restore();
 }
 
@@ -2550,11 +2597,17 @@ function drawTriggeredExplosions(explosions, visibleTrailCount, now, starts) {
     ctx.restore();
 }
 
-function animateExplosions(scene, explosions, screenShake, visualPhysics = undefined) {
+function animateExplosions(scene, explosions, screenShake, playbackOptions = {}) {
     const started = performance.now();
-    const intense = hasIntenseExplosion(explosions);
+    const visualPhysics = playbackOptions.visualPhysics ?? playbackOptions.VisualPhysics;
+    const destruction = sanitizeCanvasDestruction(playbackOptions.finalShotDestruction ?? playbackOptions.FinalShotDestruction);
+    const hiddenTankIds = destructionVictimIds(destruction);
+    const intense = hasIntenseExplosion(explosions) || Boolean(destruction);
     const slumpDuration = Number(visualPhysics?.slump?.durationMs ?? 0);
     const duration = Math.max(hasNuclearExplosion(explosions) ? 560 : 420, slumpDuration);
+    const impactShakeLimit = destruction
+        ? (destruction.mutual ? 3.6 : 2.7)
+        : intense ? 7 : 3;
 
     return new Promise(resolve => {
         const tick = now => {
@@ -2567,10 +2620,13 @@ function animateExplosions(scene, explosions, screenShake, visualPhysics = undef
             const strength = Math.sin(t * Math.PI);
             const impulseShake = strongestVisualImpulse(visualPhysics);
             const shakeClamp = visualPhysics?.slump?.reducedMotion ? 2.5 : intense ? 7 : 3;
-            const shake = screenShake ? strength * Math.min(shakeClamp, Math.max(intense ? 4 : 2, impulseShake * 0.035)) : 0;
-            drawScene(scene, Math.sin(now * 0.09) * shake, Math.cos(now * 0.07) * shake * 0.45);
+            const shake = screenShake
+                ? strength * Math.min(impactShakeLimit, Math.max(intense ? 4 : 2, Math.min(shakeClamp, impulseShake * 0.035)))
+                : 0;
+            drawScene(scene, Math.sin(now * 0.09) * shake, Math.cos(now * 0.07) * shake * 0.45, { hiddenTankIds });
             drawExplosions(explosions, t);
             drawVisualPhysicsEffects(visualPhysics, now - started, t);
+            if (destruction) drawFinalShotDestructionFlash(destruction, t);
             if (t < 1) {
                 scheduleShotFrame(tick);
                 return;
@@ -2581,6 +2637,322 @@ function animateExplosions(scene, explosions, screenShake, visualPhysics = undef
 
         scheduleShotFrame(tick);
     });
+}
+
+function animateFinalShotDestruction(scene, playbackOptions = {}, screenShake = false) {
+    const destruction = sanitizeCanvasDestruction(playbackOptions.finalShotDestruction ?? playbackOptions.FinalShotDestruction);
+    if (!destruction) {
+        return Promise.resolve();
+    }
+
+    const started = performance.now();
+    const duration = destruction.reducedMotion ? 1800 : 4300;
+    const hiddenTankIds = destructionVictimIds(destruction);
+    const pieces = destruction.pieces.map(piece => ({
+        ...piece,
+        x: piece.x,
+        y: piece.y,
+        vx: piece.vx,
+        vy: piece.vy,
+        angle: seededUnit(piece.seed, 5) * Math.PI * 2,
+        settled: false
+    }));
+
+    return new Promise(resolve => {
+        let last = started;
+        let backdrop = undefined;
+        const tick = now => {
+            if (!ctx) {
+                resolve();
+                return;
+            }
+
+            const elapsed = now - started;
+            const t = clamp01(elapsed / duration);
+            const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+            last = now;
+            const recoil = Math.exp(-elapsed / 360);
+            const lowRumble = Math.max(0, 1 - elapsed / 1350) * 0.24;
+            const shakeStrength = screenShake ? (destruction.mutual ? 4.2 : 3.1) * (recoil + lowRumble) : 0;
+            const shakeX = Math.sin(now * 0.1) * shakeStrength;
+            const shakeY = Math.cos(now * 0.08) * shakeStrength * 0.45;
+            if (!backdrop || backdrop.width !== canvas.width || backdrop.height !== canvas.height) {
+                backdrop = captureDestructionBackdrop(scene, hiddenTankIds);
+            }
+
+            drawCachedDestructionBackdrop(backdrop, shakeX, shakeY);
+            drawFinalDustCloud(destruction, t, false);
+            if (t < 0.48) {
+                drawFinalShotDestructionFlash(destruction, Math.min(1, t * 2.1));
+            }
+            updateCanvasDebrisPieces(pieces, dt);
+            drawCanvasDebrisPieces(pieces, t);
+            drawFinalDustCloud(destruction, t, true);
+            drawFinalSmokeColumn(destruction, t);
+
+            if (t < 1) {
+                scheduleShotFrame(tick);
+                return;
+            }
+
+            resolve();
+        };
+
+        scheduleShotFrame(tick);
+    });
+}
+
+function updateCanvasDebrisPieces(pieces, dt) {
+    for (const piece of pieces) {
+        if (piece.settled) continue;
+
+        const drag = Math.max(0, 1 - piece.drag * dt);
+        piece.vx = (piece.vx + (lastScene?.wind ?? 0) * 0.055 * dt) * drag;
+        piece.vy = (piece.vy + 285 * dt) * drag;
+        piece.x += piece.vx * dt;
+        piece.y += piece.vy * dt;
+        piece.angle += piece.spin * dt;
+        piece.spin *= Math.max(0, 1 - piece.friction * 0.42 * dt);
+
+        const surface = terrainSurfaceY(piece.x);
+        const radius = piece.size * 0.42;
+        if (piece.y + radius >= surface) {
+            const slope = (terrainSurfaceY(piece.x + 4) - terrainSurfaceY(piece.x - 4)) / 8;
+            const nx = -slope;
+            const ny = 1;
+            const nLen = Math.max(0.001, Math.hypot(nx, ny));
+            const normalX = nx / nLen;
+            const normalY = ny / nLen;
+            const dot = piece.vx * normalX + piece.vy * normalY;
+            piece.x -= normalX * Math.min(18, Math.max(0, piece.y + radius - surface));
+            piece.y = surface - radius;
+            if (dot > 0) {
+                piece.vx = (piece.vx - (1 + piece.restitution) * dot * normalX) * (1 - piece.friction * 0.52);
+                piece.vy = (piece.vy - (1 + piece.restitution) * dot * normalY) * piece.restitution;
+                piece.spin += (piece.vx * 0.012) / Math.max(0.2, piece.mass);
+            }
+
+            if (Math.hypot(piece.vx, piece.vy) < 26 && Math.abs(piece.spin) < 0.9) {
+                piece.settled = true;
+                piece.vx = 0;
+                piece.vy = 0;
+                piece.spin = 0;
+            }
+        }
+    }
+}
+
+function drawFinalShotDestructionFlash(destruction, progress) {
+    const fade = Math.max(0, 1 - progress);
+    const radius = destruction.radius * (0.4 + progress * 1.6);
+    ctx.save();
+    setWorldTransform();
+    const gradient = ctx.createRadialGradient(destruction.x, destruction.y, 2, destruction.x, destruction.y, radius);
+    gradient.addColorStop(0, `rgba(255, 252, 220, ${0.72 * fade})`);
+    gradient.addColorStop(0.36, `rgba(255, 162, 54, ${0.48 * fade})`);
+    gradient.addColorStop(1, "rgba(52, 28, 18, 0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(destruction.x, destruction.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 226, 128, ${0.78 * fade})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(destruction.x, destruction.y, destruction.radius * (0.75 + progress * 1.45), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawCanvasDebrisPieces(pieces, progress) {
+    ctx.save();
+    setWorldTransform();
+    const sorted = pieces.slice().sort((a, b) => a.y - b.y);
+    for (const piece of sorted) {
+        const spriteName = canvasDebrisSpriteName(piece.sprite);
+        const alpha = clamp(1 - progress * 0.12, 0.62, 1);
+        const height = piece.size * (piece.sprite === "hull" || piece.sprite === "turret" ? 1.72 : 1.38);
+        const frame = spriteFrame(spriteName);
+        const width = frame ? height * frame.aspect : height * 1.4;
+        drawDebrisShadow(piece, width, height);
+        ctx.save();
+        ctx.translate(piece.x, piece.y);
+        ctx.rotate(piece.angle);
+        ctx.globalAlpha = alpha;
+        if (hasSprite(spriteName)) {
+            drawExtraSprite(spriteName, -width * 0.5, -height * 0.5, width, height);
+            ctx.globalCompositeOperation = "multiply";
+            ctx.fillStyle = `rgba(34, 26, 20, ${0.12 + progress * 0.08})`;
+            ctx.fillRect(-width * 0.5, -height * 0.5, width, height);
+        } else {
+            ctx.fillStyle = `rgba(${Math.round(piece.r * 255)}, ${Math.round(piece.g * 255)}, ${Math.round(piece.b * 255)}, ${alpha})`;
+            ctx.fillRect(-width * 0.5, -height * 0.35, width, height * 0.7);
+        }
+        ctx.restore();
+    }
+    ctx.restore();
+}
+
+function drawDebrisShadow(piece, width, height) {
+    const surface = terrainSurfaceY(piece.x);
+    const altitude = Math.max(0, surface - piece.y);
+    const closeness = clamp(1 - altitude / 130, 0, 1);
+    if (closeness <= 0.03) return;
+
+    ctx.save();
+    ctx.fillStyle = `rgba(18, 15, 12, ${0.22 * closeness})`;
+    ctx.beginPath();
+    ctx.ellipse(piece.x, surface + 2, width * (0.32 + closeness * 0.18), Math.max(2, height * 0.12), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawFinalDustCloud(destruction, progress, foreground) {
+    const phase = foreground ? progress : Math.min(1, progress * 1.35);
+    const fade = foreground
+        ? Math.max(0, 1 - Math.max(0, progress - 0.12) * 1.6)
+        : Math.max(0, 1 - progress * 1.05);
+    if (fade <= 0.02) return;
+
+    ctx.save();
+    setWorldTransform();
+    const count = foreground ? 10 : 14;
+    for (let i = 0; i < count; i++) {
+        const unit = seededUnit(Math.round(destruction.x * 13 + destruction.y), i + (foreground ? 100 : 0));
+        const angle = -Math.PI + unit * Math.PI;
+        const distance = destruction.radius * (0.18 + seededUnit(i, 7) * 0.92) * (0.35 + phase * 0.8);
+        const x = destruction.x + Math.cos(angle) * distance + (lastScene?.wind ?? 0) * phase * 0.16;
+        const y = terrainSurfaceY(destruction.x) - 6 + Math.sin(angle) * destruction.radius * 0.12 - phase * destruction.radius * (foreground ? 0.08 : 0.16);
+        const rx = destruction.radius * (0.16 + seededUnit(i, 17) * 0.18) * (0.8 + phase * 0.65);
+        const ry = rx * (0.34 + seededUnit(i, 23) * 0.2);
+        ctx.fillStyle = foreground
+            ? `rgba(45, 38, 30, ${fade * 0.11})`
+            : `rgba(91, 76, 55, ${fade * 0.14})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawFinalSmokeColumn(destruction, progress) {
+    if (progress <= 0.08) return;
+
+    const fade = Math.max(0, 1 - progress * 0.65);
+    ctx.save();
+    setWorldTransform();
+    for (let i = 0; i < 10; i++) {
+        const t = i / 9;
+        const x = destruction.x + Math.sin(progress * 7 + i) * destruction.radius * 0.12 + (lastScene?.wind ?? 0) * t * 0.18;
+        const y = terrainSurfaceY(destruction.x) - t * destruction.radius * 1.2 - progress * 18;
+        const r = destruction.radius * (0.09 + t * 0.18);
+        ctx.fillStyle = `rgba(31, 27, 24, ${fade * (0.11 + t * 0.06)})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r * 1.15, r * 0.72, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function sanitizeCanvasDestruction(destruction) {
+    if (!destruction?.active && !destruction?.Active) return undefined;
+
+    const pieces = destruction.pieces ?? destruction.Pieces;
+    if (!Array.isArray(pieces) || pieces.length === 0) return undefined;
+
+    const x = Number(destruction.x ?? destruction.X);
+    const y = Number(destruction.y ?? destruction.Y);
+    const radius = Number(destruction.radius ?? destruction.Radius ?? 96);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius) || radius <= 0) return undefined;
+
+    const sanitized = [];
+    for (const piece of pieces) {
+        const x = Number(piece.x ?? piece.X);
+        const y = Number(piece.y ?? piece.Y);
+        const vx = Number(piece.vx ?? piece.Vx);
+        const vy = Number(piece.vy ?? piece.Vy);
+        if (![x, y, vx, vy].every(Number.isFinite)) continue;
+
+        sanitized.push({
+            victimId: String(piece.victimId ?? piece.VictimId ?? ""),
+            sprite: String(piece.sprite ?? piece.Sprite ?? "plate"),
+            x,
+            y,
+            vx,
+            vy,
+            size: clamp(Number(piece.size ?? piece.Size ?? 10), 3, 48),
+            mass: clamp(Number(piece.mass ?? piece.Mass ?? 1), 0.1, 12),
+            restitution: clamp(Number(piece.restitution ?? piece.Restitution ?? 0.42), 0, 0.9),
+            friction: clamp(Number(piece.friction ?? piece.Friction ?? 0.55), 0, 0.95),
+            drag: clamp(Number(piece.drag ?? piece.Drag ?? 0.3), 0, 1.5),
+            spin: clamp(Number(piece.spin ?? piece.Spin ?? 0), -16, 16),
+            r: clamp(Number(piece.r ?? piece.R ?? 0.74), 0, 1),
+            g: clamp(Number(piece.g ?? piece.G ?? 0.58), 0, 1),
+            b: clamp(Number(piece.b ?? piece.B ?? 0.42), 0, 1),
+            seed: Number(piece.seed ?? piece.Seed ?? sanitized.length * 997)
+        });
+    }
+
+    if (!sanitized.length) return undefined;
+    return {
+        x,
+        y,
+        radius,
+        mutual: Boolean(destruction.mutual ?? destruction.Mutual),
+        reducedMotion: Boolean(destruction.reducedMotion ?? destruction.ReducedMotion),
+        pieces: sanitized
+    };
+}
+
+function canvasDebrisSpriteName(sprite) {
+    switch (String(sprite ?? "").toLowerCase()) {
+        case "hull":
+            return "tankDebrisHull";
+        case "turret":
+            return "tankDebrisTurret";
+        case "tread":
+            return "tankDebrisTread";
+        case "barrel":
+            return "tankDebrisBarrel";
+        default:
+            return "tankDebrisPlate";
+    }
+}
+
+function destructionVictimIds(destruction) {
+    const ids = new Set();
+    if (!destruction?.pieces) return ids;
+
+    for (const piece of destruction.pieces) {
+        if (piece.victimId) ids.add(String(piece.victimId));
+    }
+
+    return ids;
+}
+
+function captureDestructionBackdrop(scene, hiddenTankIds) {
+    drawScene(scene, 0, 0, { hiddenTankIds });
+    const backdrop = document.createElement("canvas");
+    backdrop.width = canvas.width;
+    backdrop.height = canvas.height;
+    const backdropContext = backdrop.getContext("2d");
+    backdropContext.drawImage(canvas, 0, 0);
+    return backdrop;
+}
+
+function drawCachedDestructionBackdrop(backdrop, offsetX, offsetY) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(backdrop, offsetX, offsetY);
+    ctx.restore();
+}
+
+function seededUnit(seed, salt) {
+    let value = Math.imul((Number(seed) | 0) ^ Math.imul((Number(salt) | 0) + 0x9e3779b9, 0x85ebca6b), 0xc2b2ae35);
+    value ^= value >>> 16;
+    value = Math.imul(value, 0x7feb352d);
+    value ^= value >>> 15;
+    return ((value >>> 0) & 0x00ffffff) / 16777215;
 }
 
 function hasNuclearExplosion(explosions) {
