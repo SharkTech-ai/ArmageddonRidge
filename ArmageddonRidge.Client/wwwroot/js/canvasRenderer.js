@@ -379,9 +379,9 @@ function sanitizeTankPoses(poses) {
             leftTreadY: Number(item?.leftTreadY ?? y),
             rightTreadY: Number(item?.rightTreadY ?? y),
             suspensionCompression: clamp01(Number(item?.suspensionCompression ?? 0)),
-            recoilX: clamp(Number(item?.recoilX ?? 0), -18, 18),
-            recoilY: clamp(Number(item?.recoilY ?? 0), -18, 18),
-            rockAngle: clamp(Number(item?.rockAngle ?? 0), -16, 16),
+            recoilX: clamp(Number(item?.recoilX ?? 0), -28, 28),
+            recoilY: clamp(Number(item?.recoilY ?? 0), -28, 28),
+            rockAngle: clamp(Number(item?.rockAngle ?? 0), -18, 18),
             shadowSquash: clamp(Number(item?.shadowSquash ?? 1), 0.75, 1.3)
         };
     });
@@ -1349,16 +1349,32 @@ function drawTankRecoilShock(tank, now) {
     const muzzleY = tank.y - 44 - Math.sin(angle) * 48;
 
     ctx.save();
-    ctx.strokeStyle = `rgba(255, 236, 170, ${0.56 * (1 - pulse * 0.35)})`;
+    ctx.strokeStyle = `rgba(255, 236, 170, ${0.72 * (1 - pulse * 0.34)})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(muzzleX, muzzleY, 14 + pulse * 24 + recoil * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255, 208, 116, ${0.34 * (1 - pulse * 0.4)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(muzzleX, muzzleY, 28 + pulse * 38 + recoil * 1.15, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(35, 30, 24, ${0.48 * (1 - pulse * 0.2)})`;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.ellipse(tank.x, tank.y - 20, 52 + recoil * 2.1, 20 + recoil * 0.72, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(20, 16, 12, ${0.34 * (1 - pulse * 0.18)})`;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(muzzleX, muzzleY, 12 + pulse * 18 + recoil * 0.7, 0, Math.PI * 2);
+    ctx.moveTo(tank.x - facing * (28 + recoil * 0.2), tank.y - 4);
+    ctx.lineTo(tank.x - facing * (92 + recoil * 3.1), tank.y - 8 - pulse * 4);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(35, 30, 24, ${0.34 * (1 - pulse * 0.2)})`;
-    ctx.lineWidth = 5;
+    ctx.fillStyle = `rgba(116, 85, 48, ${0.32 * (1 - pulse * 0.35)})`;
     ctx.beginPath();
-    ctx.ellipse(tank.x, tank.y - 20, 48 + recoil * 1.4, 18 + recoil * 0.5, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.ellipse(tank.x - facing * (48 + recoil * 1.5), tank.y - 3, 30 + recoil * 1.2, 7 + recoil * 0.18, -0.04 * facing, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 }
 
@@ -2641,16 +2657,27 @@ function drawSlumpingColumns(slump, elapsedMs) {
         const height = Math.abs(toY - fromY);
         if (height <= 0.5) continue;
 
-        ctx.fillStyle = `rgba(92, 67, 38, ${0.34 * (1 - local)})`;
-        ctx.fillRect(x - 2, Math.min(fromY, y) - 1, 5, Math.max(3, height + 2));
-        if (!reduced && i % 3 === 0) {
+        ctx.fillStyle = `rgba(92, 67, 38, ${0.5 * (1 - local)})`;
+        ctx.fillRect(x - 3, Math.min(fromY, y) - 2, 7, Math.max(5, height + 4));
+        if (!reduced && i % 2 === 0) {
             const dust = 1 - local;
-            ctx.fillStyle = `rgba(118, 92, 57, ${0.2 * dust})`;
+            ctx.fillStyle = `rgba(118, 92, 57, ${0.3 * dust})`;
             ctx.beginPath();
-            ctx.arc(x, Math.min(fromY, toY) - 5 - local * 14, 6 + height * 0.14, 0, Math.PI * 2);
+            ctx.ellipse(x, Math.min(fromY, toY) - 6 - local * 16, 9 + height * 0.18, 4 + height * 0.08, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = `rgba(78, 56, 34, ${0.36 * dust})`;
-            ctx.fillRect(x - 3 + (i % 5), y - 7 - local * 18, 5, 4);
+            ctx.fillRect(x - 4 + (i % 7), y - 8 - local * 24, 7, 5);
+        }
+
+        if (!reduced && i % 8 === 0) {
+            const dir = toY > fromY ? 1 : -1;
+            const dust = 1 - local;
+            ctx.strokeStyle = `rgba(64, 44, 25, ${0.28 * dust})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x - 14, y - 3);
+            ctx.quadraticCurveTo(x, y + dir * height * 0.12, x + 16, toY - 2);
+            ctx.stroke();
         }
     }
     ctx.restore();

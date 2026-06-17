@@ -93,6 +93,8 @@ public sealed class VisualPhysicsTests
         var pose = service.BuildPose(tank, terrain, [impulse], firingTankId: "player");
 
         Assert.True(pose.RecoilX < 0);
+        Assert.True(MathF.Abs(pose.RecoilX) >= 20);
+        Assert.True(pose.SuspensionCompression > 0.7f);
         Assert.True(pose.RockAngleDegrees > 0);
     }
 
