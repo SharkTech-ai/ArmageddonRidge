@@ -500,7 +500,7 @@ export function sanitizeEffectExplosions(explosions) {
     return sanitized;
 }
 
-function sanitizeEffectPayload(payload) {
+export function sanitizeEffectPayload(payload) {
     if (!payload) {
         return { trail: [], trailPointCount: 0, explosions: [] };
     }
@@ -512,8 +512,26 @@ function sanitizeEffectPayload(payload) {
         trail,
         explosions,
         visualPhysics: sanitizeVisualPhysics(payload.visualPhysics ?? payload.VisualPhysics),
+        civilianImpacts: sanitizeCivilianImpacts(payload.civilianImpacts ?? payload.CivilianImpacts),
         trailPointCount: trail.length
     };
+}
+
+function sanitizeCivilianImpacts(impacts) {
+    return sanitizeArray(impacts, item => {
+        const x = finitePointCoordinate(item, "x");
+        const y = finitePointCoordinate(item, "y");
+        if (x === undefined || y === undefined) return null;
+        return {
+            x,
+            y,
+            damage: clamp(finiteNumber(payloadValue(item, "damage"), 0), 0, 500),
+            healthRemaining: Math.max(0, finiteNumber(payloadValue(item, "healthRemaining"), 0)),
+            penalty: Math.max(0, finiteNumber(payloadValue(item, "penalty"), 0)),
+            collapsed: Boolean(payloadValue(item, "collapsed")),
+            kind: normalized(payloadValue(item, "kind") ?? "building")
+        };
+    });
 }
 
 export function sanitizeVisualPhysics(payload) {
@@ -1480,6 +1498,7 @@ function spawnImpactEffects(payload, explosions = payload?.explosions ?? [], inc
         spawnExplosion(explosion, payload, wind);
     }
     spawnMaterialImpactBursts(payload?.visualPhysics, wind);
+    spawnCivilianImpactBursts(payload?.civilianImpacts, wind);
     spawnLingeringVisualEffects(payload?.visualPhysics, wind);
 
     if (includeShieldRipple && payload?.shieldHit) {
@@ -1546,6 +1565,59 @@ function spawnMaterialImpactBursts(visualPhysics, wind) {
             const kind = shield ? kinds.plasma : lava ? kinds.ember : metal ? kinds.spark : kinds.debris;
             const color = shield ? [0.54, 0.88, 1] : lava ? [1, 0.34, 0.08] : metal ? [1, 0.82, 0.38] : [0.56, 0.42, 0.25];
             spawnParticle(impact.x, impact.y, Math.cos(angle) * speed + wind * 0.35, Math.sin(angle) * speed - randomBetween(0, 28), color[0], color[1], color[2], randomBetween(0.34, 0.76), randomBetween(2.5, lava ? 8 : 6), randomBetween(0.28, lava ? 1.5 : 0.95), kind);
+        }
+    }
+}
+
+function spawnCivilianImpactBursts(impacts, wind) {
+    const source = impacts ?? [];
+    for (let i = 0; i < source.length; i++) {
+        const impact = source[i];
+        const collapseBoost = impact.collapsed ? 1.45 : 1;
+        const count = scaledCount(Math.max(18, impact.damage * 0.42) * collapseBoost, 10, impact.collapsed ? 130 : 80);
+        const plume = scaledCount(Math.max(8, impact.damage * 0.14) * collapseBoost, 4, impact.collapsed ? 54 : 28);
+
+        spawnRadialEffect(
+            impact.x,
+            impact.y - 18,
+            (impact.collapsed ? 112 : 72) + Math.min(70, impact.damage * 0.35),
+            impact.collapsed ? 1.35 : 0.82,
+            radialKinds.dust,
+            impact.collapsed ? 0.74 : 0.48,
+            [0.56, 0.5, 0.42, impact.collapsed ? 0.38 : 0.26],
+            { wind, softness: 0.42, aspect: 1.25, seed: randomBetween(0, 1000) });
+
+        for (let p = 0; p < count; p++) {
+            const angle = randomBetween(-Math.PI, Math.PI);
+            const speed = randomBetween(30, impact.collapsed ? 230 : 150);
+            const warm = p % 5 === 0;
+            spawnParticle(
+                impact.x + randomBetween(-18, 18),
+                impact.y - randomBetween(10, 46),
+                Math.cos(angle) * speed + wind * randomBetween(0.2, 0.9),
+                Math.sin(angle) * speed - randomBetween(12, impact.collapsed ? 92 : 58),
+                warm ? 0.98 : 0.58,
+                warm ? 0.72 : 0.5,
+                warm ? 0.38 : 0.42,
+                randomBetween(0.3, 0.68),
+                randomBetween(3, impact.collapsed ? 10 : 7),
+                randomBetween(0.5, impact.collapsed ? 1.8 : 1.2),
+                warm ? kinds.spark : kinds.debris);
+        }
+
+        for (let p = 0; p < plume; p++) {
+            spawnParticle(
+                impact.x + randomBetween(-26, 26),
+                impact.y - randomBetween(8, 38),
+                wind * randomBetween(0.8, 1.8) + randomBetween(-26, 26),
+                randomBetween(-68, -10),
+                0.43,
+                0.39,
+                0.33,
+                randomBetween(0.12, 0.28),
+                randomBetween(18, impact.collapsed ? 48 : 34),
+                randomBetween(0.9, impact.collapsed ? 2.4 : 1.55),
+                kinds.smoke);
         }
     }
 }

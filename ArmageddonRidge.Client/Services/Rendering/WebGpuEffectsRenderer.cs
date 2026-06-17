@@ -194,6 +194,7 @@ public sealed class WebGpuEffectsRenderer(IJSRuntime js) : IAsyncDisposable
             Trail = trail,
             Explosions = explosions,
             VisualPhysics = RenderPayloadSanitizer.BuildVisualPhysicsPayload(resolution.VisualPhysics),
+            CivilianImpacts = RenderPayloadSanitizer.BuildCivilianImpactPayload(resolution.CivilianImpacts ?? []),
             TerrainColumnsTouched = resolution.Performance.TerrainColumnsTouched,
             SlumpingColumns = resolution.Performance.SlumpingColumns,
             Wind = wind,

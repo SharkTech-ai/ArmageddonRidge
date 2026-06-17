@@ -134,6 +134,14 @@ public partial class Home
 
     private string LatestCombatEvent => _state?.EventLog.LastOrDefault() ?? string.Empty;
 
+    private string CivilianPenaltyText => _state is null
+        ? "$0"
+        : $"${Math.Max(0, _state.CivilianPenaltyByPlayer):N0}";
+
+    private string CivilianRiskText => _state is null || _state.CivilianStructures.Count == 0
+        ? "Clear"
+        : $"{_state.CivilianStructures.Count(static structure => !structure.IsCollapsed)} standing";
+
     private string SimdStatusLabel => _renderMode == RenderMode.Hybrid
         ? "N/A"
         : _simdHardwareAccelerated ? "Enabled" : "Disabled";
@@ -581,7 +589,8 @@ public partial class Home
             _cpuHurt,
             _playerShieldHit,
             _cpuShieldHit,
-            BuildingPayload(_state.CivilianStructures));
+            BuildingPayload(_state.CivilianStructures),
+            _state.ShotsFired);
     }
 
     private void ResetRenderCache()

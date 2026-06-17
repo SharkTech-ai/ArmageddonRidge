@@ -20,7 +20,8 @@ public sealed record RenderScene(
     bool CpuHurt = false,
     bool PlayerShieldHit = false,
     bool CpuShieldHit = false,
-    RenderBuilding[]? Buildings = null);
+    RenderBuilding[]? Buildings = null,
+    int ShotsFired = 0);
 
 public sealed record RenderWorld(int Width, int Height);
 

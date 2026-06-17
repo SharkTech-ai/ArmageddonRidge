@@ -209,6 +209,18 @@ public sealed class WebGpuEffectsModuleTests
             if (!payload.impacts[0].shieldLike || payload.shockwaves[0].intensity !== 120) {
                 throw new Error(`Unexpected visual physics values ${JSON.stringify(payload)}`);
             }
+
+            const shot = effects.sanitizeEffectPayload({
+                trail: [{ x: 1, y: 2 }],
+                civilianImpacts: [
+                    { x: 20, y: 30, damage: 80, penalty: 125, collapsed: true, kind: 'office' },
+                    { x: Number.NaN, y: 30, damage: 80 }
+                ]
+            });
+
+            if (shot.civilianImpacts.length !== 1 || !shot.civilianImpacts[0].collapsed || shot.civilianImpacts[0].penalty !== 125) {
+                throw new Error(`Unexpected civilian impact payload ${JSON.stringify(shot)}`);
+            }
             """;
 
         using var process = new Process
