@@ -205,6 +205,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         Vector2? interceptPoint = null;
         var terrainWatch = Stopwatch.StartNew();
         var resolvedExplosions = new List<ExplosionResult>(simulation.Explosions.Count);
+        var civilianTerrainBefore = settings.EnableCivilianStructures
+            ? CaptureCivilianTerrain(state.Terrain, state.CivilianStructures)
+            : [];
         int touched;
         if (owner.IsCpu
             && HasPatriotInterceptor(opponent)
@@ -257,7 +260,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             var impactedIds = civilianImpacts
                 .Select(static impact => impact.StructureId)
                 .ToHashSet(StringComparer.Ordinal);
-            civilianImpacts.AddRange(ResolveCivilianTerrainSupport(state, owner, impactedIds));
+            civilianImpacts.AddRange(ResolveCivilianTerrainSupport(state, owner, impactedIds, civilianTerrainBefore));
         }
         if (civilianImpacts.Count > 0)
         {
@@ -732,29 +735,44 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         return impacts;
     }
 
-    private static IReadOnlyList<CivilianImpactResult> ResolveCivilianTerrainSupport(GameState state, Tank owner, ISet<string> alreadyImpacted)
+    private static IReadOnlyList<CivilianImpactResult> ResolveCivilianTerrainSupport(
+        GameState state,
+        Tank owner,
+        ISet<string> alreadyImpacted,
+        IReadOnlyDictionary<string, CivilianTerrainSnapshot> terrainBefore)
     {
-        if (state.CivilianStructures.Count == 0) return [];
+        if (state.CivilianStructures.Count == 0 || terrainBefore.Count == 0) return [];
 
         var impacts = new List<CivilianImpactResult>();
         for (var i = 0; i < state.CivilianStructures.Count; i++)
         {
             var structure = state.CivilianStructures[i];
+            if (!terrainBefore.TryGetValue(structure.Id, out var before)) continue;
+
             var physics = CivilianPhysicsFor(structure.Kind);
-            var support = SampleCivilianSupport(state.Terrain, structure);
-            structure.SupportFraction = support.SupportFraction;
+            var support = SampleCivilianSupport(state.Terrain, structure, before);
+            if (support.TerrainDrop <= 0.5f
+                && support.SupportFraction >= 0.999f
+                && MathF.Abs(support.SlopeDeltaDegrees) <= 0.5f)
+            {
+                continue;
+            }
+
+            structure.SupportFraction = MathF.Min(structure.SupportFraction, support.SupportFraction);
             structure.TiltDegrees = Math.Clamp(
-                (support.SlopeDegrees * physics.LeanMultiplier) + structure.TiltDegrees * 0.35f,
+                structure.TiltDegrees + (support.SlopeDeltaDegrees * physics.LeanMultiplier),
                 -34f,
                 34f);
 
             if (structure.IsCollapsed)
             {
-                structure.Position = new Vector2(structure.Position.X, Math.Clamp(support.AverageSurfaceY, 0, state.Terrain.Height - 1));
+                structure.Position = new Vector2(
+                    structure.Position.X,
+                    Math.Clamp(structure.Position.Y + support.TerrainDrop, 0, state.Terrain.Height - 1));
                 continue;
             }
 
-            var fallDistance = MathF.Max(0, support.AverageSurfaceY - structure.Position.Y);
+            var fallDistance = support.TerrainDrop;
             if (fallDistance > 0.5f)
             {
                 var settle = Math.Clamp(fallDistance * 0.72f, 0f, MathF.Max(18f, structure.Height * 0.62f));
@@ -763,7 +781,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
 
             var supportDamage = MathF.Max(0, 0.72f - support.SupportFraction) * 72f * physics.SupportDamageMultiplier;
             var fallDamage = MathF.Max(0, fallDistance - 5f) * 0.62f * physics.SupportDamageMultiplier;
-            var tiltDamage = MathF.Max(0, MathF.Abs(support.SlopeDegrees) - 8f) * 1.05f * physics.LeanMultiplier;
+            var tiltDamage = MathF.Max(0, MathF.Abs(support.SlopeDeltaDegrees) - 8f) * 1.05f * physics.LeanMultiplier;
             var damage = supportDamage + fallDamage + tiltDamage;
             if (support.SupportFraction < physics.CollapseSupportFraction || fallDistance > structure.Height * physics.CollapseFallFraction)
                 damage = MathF.Max(damage, structure.Health);
@@ -796,11 +814,25 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
         return impacts;
     }
 
-    private static CivilianSupportSample SampleCivilianSupport(TerrainMask terrain, CivilianStructure structure)
+    private static Dictionary<string, CivilianTerrainSnapshot> CaptureCivilianTerrain(
+        TerrainMask terrain,
+        IReadOnlyList<CivilianStructure> structures)
+    {
+        var snapshots = new Dictionary<string, CivilianTerrainSnapshot>(structures.Count, StringComparer.Ordinal);
+        for (var i = 0; i < structures.Count; i++)
+        {
+            var structure = structures[i];
+            snapshots[structure.Id] = CaptureCivilianTerrain(terrain, structure);
+        }
+
+        return snapshots;
+    }
+
+    private static CivilianTerrainSnapshot CaptureCivilianTerrain(TerrainMask terrain, CivilianStructure structure)
     {
         const int SampleCount = 9;
         var halfWidth = MathF.Max(8f, structure.Width * 0.5f);
-        var supported = 0;
+        var samples = new float[SampleCount];
         var total = 0f;
         var leftTotal = 0f;
         var rightTotal = 0f;
@@ -812,6 +844,7 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
             var t = SampleCount == 1 ? 0.5f : i / (float)(SampleCount - 1);
             var x = structure.Position.X - halfWidth + (t * halfWidth * 2f);
             var surfaceY = terrain.GetSurfaceY(x);
+            samples[i] = surfaceY;
             total += surfaceY;
             if (t < 0.5f)
             {
@@ -823,19 +856,39 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
                 rightTotal += surfaceY;
                 rightCount++;
             }
-
-            if (surfaceY <= structure.Position.Y + 8f)
-                supported++;
         }
 
         var average = total / SampleCount;
         var leftAverage = leftCount > 0 ? leftTotal / leftCount : average;
         var rightAverage = rightCount > 0 ? rightTotal / rightCount : average;
         var slopeDegrees = MathF.Atan2(rightAverage - leftAverage, MathF.Max(1f, halfWidth * 2f)) * 180f / MathF.PI;
-        return new CivilianSupportSample(
-            Math.Clamp(supported / (float)SampleCount, 0f, 1f),
+        return new CivilianTerrainSnapshot(
+            samples,
             Math.Clamp(average, 0, terrain.Height),
             Math.Clamp(slopeDegrees, -34f, 34f));
+    }
+
+    private static CivilianSupportSample SampleCivilianSupport(
+        TerrainMask terrain,
+        CivilianStructure structure,
+        CivilianTerrainSnapshot before)
+    {
+        var current = CaptureCivilianTerrain(terrain, structure);
+        var sampleCount = Math.Min(before.SurfaceY.Length, current.SurfaceY.Length);
+        if (sampleCount == 0)
+            return new CivilianSupportSample(1f, 0f, 0f);
+
+        var supported = 0;
+        for (var i = 0; i < sampleCount; i++)
+        {
+            if (current.SurfaceY[i] <= before.SurfaceY[i] + 4f)
+                supported++;
+        }
+
+        return new CivilianSupportSample(
+            Math.Clamp(supported / (float)sampleCount, 0f, 1f),
+            MathF.Max(0, current.AverageSurfaceY - before.AverageSurfaceY),
+            Math.Clamp(current.SlopeDegrees - before.SlopeDegrees, -34f, 34f));
     }
 
     private static void SeedCivilianStructures(GameState state, TerrainMask terrain, int seed)
@@ -1122,7 +1175,9 @@ public sealed class GameEngine(WeaponCatalog weapons, UpgradeCatalog upgrades)
 
 internal sealed record WeaponSimulation(IReadOnlyList<Vector2> Trail, Vector2 ImpactPoint, IReadOnlyList<ExplosionResult> Explosions);
 
-internal readonly record struct CivilianSupportSample(float SupportFraction, float AverageSurfaceY, float SlopeDegrees);
+internal readonly record struct CivilianTerrainSnapshot(float[] SurfaceY, float AverageSurfaceY, float SlopeDegrees);
+
+internal readonly record struct CivilianSupportSample(float SupportFraction, float TerrainDrop, float SlopeDeltaDegrees);
 
 internal readonly record struct CivilianBuildingPhysics(
     float BlastResistance,
