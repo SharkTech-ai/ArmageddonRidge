@@ -113,15 +113,15 @@ public readonly record struct ProjectileAirProfile(
         var baseProfile = weapon.BehaviorType switch
         {
             WeaponBehaviorType.Missile => new ProjectileAirProfile(0.018f, 0.34f, 15f, 0.02f, 720f),
-            WeaponBehaviorType.DroneSwarm => new ProjectileAirProfile(0.038f, 1.35f, 4f, 0.08f, 420f),
+            WeaponBehaviorType.DroneSwarm => new ProjectileAirProfile(0.0012f, 1.1f, 18f, 0.12f, 520f),
             WeaponBehaviorType.Napalm => new ProjectileAirProfile(0.03f, 1.18f, 0f, 0.01f, 460f),
-            WeaponBehaviorType.BunkerBuster or WeaponBehaviorType.MultiStagePenetrator => new ProjectileAirProfile(0.008f, 0.18f, 0f, 0f, 760f),
+            WeaponBehaviorType.BunkerBuster or WeaponBehaviorType.MultiStagePenetrator => new ProjectileAirProfile(0.0006f, 0.18f, 0f, 0f, 760f),
             WeaponBehaviorType.Dirt or WeaponBehaviorType.Excavator or WeaponBehaviorType.Nuclear => ProjectileBallisticEquivalent,
-            _ => new ProjectileAirProfile(0.012f, 0.82f, 0f, 0f, 620f)
+            _ => new ProjectileAirProfile(0.0006f, 0.82f, 0f, 0f, 620f)
         };
 
         if (weapon.Id == WeaponIds.HeavyShell)
-            return baseProfile with { Drag = MathF.Min(baseProfile.Drag, 0.008f), WindCoupling = MathF.Min(baseProfile.WindCoupling, 0.2f), TerminalVelocity = 780f };
+            return baseProfile with { Drag = MathF.Min(baseProfile.Drag, 0.0005f), WindCoupling = MathF.Min(baseProfile.WindCoupling, 0.2f), TerminalVelocity = 780f };
 
         if (weapon.Id == WeaponIds.PeaShell)
             return ProjectileBallisticEquivalent;
