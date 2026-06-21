@@ -107,6 +107,13 @@ public partial class Home
         ? GamePhase.MainMenu
         : _shotPlaybackInProgress ? GamePhase.Battle : _state.Phase;
 
+    private string VisiblePhaseLabel => VisiblePhase switch
+    {
+        GamePhase.MainMenu => "Main Menu",
+        GamePhase.RoundOver => "Round Over",
+        _ => VisiblePhase.ToString()
+    };
+
     private string BattlefieldPanelCss =>
         $"battlefield-panel{(_playerHurt ? " player-hurt" : "")}{(_cpuHurt ? " cpu-hurt" : "")}{(_playerShieldHit ? " player-shield-hit" : "")}{(_cpuShieldHit ? " cpu-shield-hit" : "")}";
 
