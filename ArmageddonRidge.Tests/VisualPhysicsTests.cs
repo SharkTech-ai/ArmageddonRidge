@@ -134,25 +134,21 @@ public sealed class VisualPhysicsTests
         Assert.True(MathF.Abs(peaRight.ImpactPoint.X - peaLeft.ImpactPoint.X) > MathF.Abs(heavyRight.ImpactPoint.X - heavyLeft.ImpactPoint.X));
     }
 
-    [Fact]
-    public void NuclearAirProfilePreservesReadableBallisticRange()
-    {
-        var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray());
-        var player = Tank("player", 160, terrain, 42);
-        var cpu = Tank("cpu", 980, terrain, 138);
-        var weapon = new WeaponCatalog().Get(WeaponIds.TacticalNuke);
-        var simulator = new ProjectileSimulator();
-
-        var nuke = simulator.Simulate(terrain, player, cpu, weapon, 42, 70, 0);
-        Assert.InRange(nuke.ImpactPoint.X, 650, 820);
-        Assert.True(nuke.Trail.Count > 40);
-    }
-
     [Theory]
+    [InlineData(WeaponIds.PeaShell, 850, 950)]
+    [InlineData(WeaponIds.HeavyShell, 650, 800)]
+    [InlineData(WeaponIds.BabyMissile, 720, 850)]
+    [InlineData(WeaponIds.ClusterPopper, 680, 820)]
     [InlineData(WeaponIds.SplitterMirv, 720, 900)]
-    [InlineData(WeaponIds.Gbu57Mop, 680, 850)]
     [InlineData(WeaponIds.NapalmFlask, 580, 730)]
-    public void SpecializedWeaponsPreserveReadableLongRange(string weaponId, float minimumX, float maximumX)
+    [InlineData(WeaponIds.DirtDrop, 650, 800)]
+    [InlineData(WeaponIds.Excavator, 720, 850)]
+    [InlineData(WeaponIds.BunkerBuster, 760, 900)]
+    [InlineData(WeaponIds.ShahedDroneSwarm, 850, 1050)]
+    [InlineData(WeaponIds.Gbu57Mop, 680, 850)]
+    [InlineData(WeaponIds.TacticalNuke, 650, 820)]
+    [InlineData(WeaponIds.DoomsdayNuke, 550, 700)]
+    public void ProjectileWeaponsPreservePlayableRange(string weaponId, float minimumX, float maximumX)
     {
         var terrain = new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, Enumerable.Repeat(680f, GameConstants.WorldWidth).ToArray());
         var player = Tank("player", 160, terrain, 42);
