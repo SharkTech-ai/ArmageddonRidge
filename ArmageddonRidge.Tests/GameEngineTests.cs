@@ -53,9 +53,38 @@ public sealed class GameEngineTests
         for (var i = 0; i < first.CivilianStructures.Count; i++)
         {
             Assert.Equal(first.CivilianStructures[i].Position, second.CivilianStructures[i].Position);
+            Assert.Equal(first.CivilianStructures[i].Kind, second.CivilianStructures[i].Kind);
             Assert.True(MathF.Abs(first.CivilianStructures[i].Position.X - first.PlayerTank.Position.X) > 100);
             Assert.True(MathF.Abs(first.CivilianStructures[i].Position.X - first.CpuTank.Position.X) > 100);
         }
+
+        Assert.Contains(first.CivilianStructures, structure => structure.Kind == "glass-office");
+        Assert.Contains(first.CivilianStructures, structure => structure.Kind == "high-rise-apartment");
+        Assert.Contains(first.CivilianStructures, structure => structure.Kind == "luxury-tower");
+    }
+
+    [Fact]
+    public void CivilianStructuresCanBeDisabledAndToggledForActiveMatch()
+    {
+        var engine = CreateEngine();
+        var disabled = new MatchSettings(TerrainSeed: 123, EnableShop: false, EnableCivilianStructures: false);
+        var state = engine.NewMatch(disabled);
+
+        Assert.Empty(state.CivilianStructures);
+
+        engine.StartNextRound(state, disabled);
+
+        Assert.Empty(state.CivilianStructures);
+
+        engine.ApplyCivilianStructureSetting(state, disabled with { EnableCivilianStructures = true });
+
+        Assert.NotEmpty(state.CivilianStructures);
+
+        engine.ApplyCivilianStructureSetting(state, disabled);
+
+        Assert.Empty(state.CivilianStructures);
+        Assert.Equal(0, state.CivilianPenaltyByPlayer);
+        Assert.Equal(0, state.CivilianPenaltyByCpu);
     }
 
     [Fact]
@@ -96,6 +125,46 @@ public sealed class GameEngineTests
         Assert.Equal(cashBefore - impact.Penalty, state.PlayerTank.Cash);
         Assert.Equal(impact.Penalty, state.CivilianPenaltyByPlayer);
         Assert.Contains(result.Events, e => e.Contains("civilian", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UnsupportedCivilianStructureSettlesAndTakesTerrainSupportDamage()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: false);
+        var state = engine.NewMatch(settings);
+        var heights = Enumerable.Repeat(620f, GameConstants.WorldWidth).ToArray();
+        for (var x = 480; x <= 560; x++)
+            heights[x] = 690f;
+
+        state.Terrain.CopyFrom(new TerrainMask(GameConstants.WorldWidth, GameConstants.WorldHeight, heights));
+        state.PlayerTank.Position = new Vector2(160, 620);
+        state.CpuTank.Position = new Vector2(1000, 620);
+        state.CpuTank.MaxHealth = 500;
+        state.CpuTank.Health = 500;
+        state.CivilianStructures.Clear();
+        state.CivilianStructures.Add(new CivilianStructure
+        {
+            Id = "unsupported-civ",
+            Position = new Vector2(520, 620),
+            Kind = "tower",
+            Width = 72,
+            Height = 118,
+            MaxHealth = 130,
+            Health = 130,
+            PenaltyValue = 240
+        });
+        engine.StartBattle(state);
+
+        var beforeY = state.CivilianStructures[0].Position.Y;
+        var result = engine.FireCurrentTurn(state, settings, angle: 85, power: 1);
+
+        var structure = state.CivilianStructures[0];
+        Assert.True(structure.Position.Y > beforeY);
+        Assert.True(structure.Health < structure.MaxHealth);
+        Assert.True(structure.SupportFraction < 0.5f);
+        Assert.NotEmpty(result.CivilianImpacts!);
+        Assert.Contains(result.CivilianImpacts!, impact => impact.StructureId == "unsupported-civ");
     }
 
     [Fact]
@@ -189,6 +258,22 @@ public sealed class GameEngineTests
         engine.Economy.AwardRound(state, TurnOwner.Cpu);
 
         Assert.Equal(before + GameConstants.LossConsolation, state.PlayerTank.Cash);
+    }
+
+    [Fact]
+    public void StartNextRoundRestoresPlayerHealthToFull()
+    {
+        var engine = CreateEngine();
+        var settings = new MatchSettings(TerrainSeed: 123, EnableShop: true);
+        var state = engine.NewMatch(settings);
+        state.PlayerTank.MaxHealth = 150;
+        state.PlayerTank.Health = 37;
+        state.Phase = GamePhase.RoundOver;
+
+        engine.StartNextRound(state, settings);
+
+        Assert.Equal(GamePhase.Shop, state.Phase);
+        Assert.Equal(state.PlayerTank.MaxHealth, state.PlayerTank.Health);
     }
 
     [Fact]
