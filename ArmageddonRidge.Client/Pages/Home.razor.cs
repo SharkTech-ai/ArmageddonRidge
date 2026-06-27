@@ -126,9 +126,13 @@ public partial class Home
     private string CpuVersusHealthCss =>
         $"versus-health cpu{(_cpuHurt ? " is-hurt" : "")}{(_cpuShieldHit ? " is-shield-hit" : "")}";
 
-    private string BattleLayoutCss => VisiblePhase == GamePhase.Battle
-        ? "is-battle"
-        : string.Empty;
+    private string BattleLayoutCss => VisiblePhase switch
+    {
+        GamePhase.Battle => "is-battle",
+        GamePhase.Shop => "is-shop",
+        GamePhase.RoundOver => "is-round-over",
+        _ => string.Empty
+    };
 
     private float AngleScrubValue => 90f - Math.Clamp(_state?.PlayerTank.TurretAngle ?? 45f, 5f, 85f);
 
